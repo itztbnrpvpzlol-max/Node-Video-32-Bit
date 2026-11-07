@@ -43,8 +43,7 @@ import androidx.media3.effect.Contrast
 import androidx.media3.effect.GaussianBlur
 import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlayEffect
-import androidx.media3.common.OverlaySettings
-import androidx.media3.effect.StaticOverlaySettings
+import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.TextOverlay
 import androidx.media3.effect.RgbFilter
@@ -168,7 +167,7 @@ class MainActivity : ComponentActivity() {
                 if (bitmap != null) {
                     val imageView = ImageView(this).apply { setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; alpha = 0.95f }
                     val lp = FrameLayout.LayoutParams(220, 220, Gravity.CENTER)
-                    (playerView.overlayFrame ?: previewContainer).addView(imageView, lp)
+                    (playerView.overlayFrameLayout ?: previewContainer).addView(imageView, lp)
                     imageOverlays[imageLayers.last().id] = imageView
                 }
             }
@@ -436,7 +435,7 @@ class MainActivity : ComponentActivity() {
         val actions = row(root)
         button("＋ MEDIA") { pickVideos.launch(arrayOf("video/*")) }.also { actions.addView(it, weighted(1.4f)) }
         button("＋ TEXT") { showTextLayerDialog() }.also { actions.addView(it, weighted()) }
-        button("＋ IMAGE") { pickImages.launch(arrayOf("image/*")) }.also { actions.addView(it, weighted()) }
+        button("＋ IMAGE") { pickImages.launch("image/*") }.also { actions.addView(it, weighted()) }
         button("TEXT −") { removeLatestTextLayer() }.also { actions.addView(it, weighted()) }
         button("＋ AUDIO") { pickAudio.launch(arrayOf("audio/*")) }.also { actions.addView(it, weighted()) }
         button("SAVE") { saveProject() }.also { actions.addView(it, weighted()) }
@@ -487,7 +486,7 @@ class MainActivity : ComponentActivity() {
         })
         val pageScroll = android.widget.ScrollView(this).apply {
             isFillViewport = true
-            addView(root, android.widget.ScrollView.LayoutParams(-1, -2))
+            addView(root, android.view.ViewGroup.LayoutParams(-1, -2))
             setBackgroundColor(Color.rgb(12, 14, 20))
         }
         setContentView(pageScroll)
@@ -545,7 +544,7 @@ class MainActivity : ComponentActivity() {
                         gravity = Gravity.CENTER
                         setPadding(16)
                     }
-                    (playerView.overlayFrame ?: previewContainer).addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+                    (playerView.overlayFrameLayout ?: previewContainer).addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
                     textOverlays[layer.id] = overlay
                     renderTextTimeline()
                     saveProject()
@@ -618,7 +617,7 @@ class MainActivity : ComponentActivity() {
 
     private fun togglePlayback() {
         val p = player ?: return
-        if (clips.isEmpty()) { pickVideos.launch("video/*"); return }
+        if (clips.isEmpty()) { pickVideos.launch(arrayOf("video/*")); return }
         if (p.isPlaying) { p.pause(); audioPlayer?.pause() } else { audioPlayer?.seekTo(p.currentPosition); p.play(); audioPlayer?.play() }
     }
 
@@ -766,11 +765,11 @@ class MainActivity : ComponentActivity() {
             ).build()
             EditedMediaItem.Builder(media).setEffects(Effects(emptyList(), buildVideoEffects(clip.id, includeOutputFormat = true))).build()
         }
-        val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(videoItems)
+        val videoSequence = EditedMediaItemSequence.Builder(videoItems).build()
         val sequences = mutableListOf(videoSequence)
         if (audioClips.isNotEmpty()) {
             val audioItems = audioClips.map { EditedMediaItem.Builder(MediaItem.fromUri(it.uri)).build() }
-            sequences.add(EditedMediaItemSequence.withAudioFrom(audioItems).buildUpon().setIsLooping(true).build())
+            sequences.add(EditedMediaItemSequence.Builder(audioItems).setIsLooping(true).build())
         }
         val composition = Composition.Builder(sequences).build()
         val outputDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
@@ -834,7 +833,7 @@ class MainActivity : ComponentActivity() {
         val bitmapOverlays = imageLayers.mapNotNull { layer ->
             try {
                 val bitmap = contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) }
-                if (bitmap != null) BitmapOverlay.createStaticBitmapOverlay(bitmap, StaticOverlaySettings.Builder().setScale(0.55f, 0.55f).build()) else null
+                if (bitmap != null) BitmapOverlay.createStaticBitmapOverlay(bitmap, OverlaySettings.Builder().setScale(0.55f, 0.55f).build()) else null
             } catch (_: Exception) { null }
         }
         if (bitmapOverlays.isNotEmpty()) effects.add(OverlayEffect(bitmapOverlays))
