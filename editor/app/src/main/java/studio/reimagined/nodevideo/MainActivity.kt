@@ -29,6 +29,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Brightness
+import androidx.media3.effect.Contrast
+import androidx.media3.effect.RgbFilter
+import androidx.media3.effect.ScaleAndRotateTransformation
+import androidx.media3.transformer.Effects
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -45,6 +50,16 @@ class MainActivity : ComponentActivity() {
     private data class Clip(val id: Long, val uri: Uri, val startMs: Long = 0, val endMs: Long)
     private data class TextLayer(val id: Long, val value: String)
     private data class AudioClip(val id: Long, val uri: Uri, val durationMs: Long)
+    private data class EffectSettings(
+        var preset: String = "Original",
+        var brightness: Float = 0f,
+        var contrast: Float = 0f,
+        var zoom: Float = 1f,
+        var rotation: Float = 0f
+    )
+    private val effectSettings = EffectSettings()
+    private val transformKeyframes = mutableMapOf<Long, MutableList<TransformKeyframe>>()
+    private lateinit var effectInfo: TextView
 
     private var player: ExoPlayer? = null
     private var audioPlayer: ExoPlayer? = null
@@ -199,6 +214,73 @@ class MainActivity : ComponentActivity() {
             .also { trimActions.addView(it, weighted()) }
         button("TRIM OUT") { trimAtPlayhead(trimStart = false) }
             .also { trimActions.addView(it, weighted()) }
+
+        val effectsTitle = TextView(this).apply {
+            text = "EFFECTS  /  COLOR & TRANSFORM"
+            textSize = 10f
+            setTextColor(Color.rgb(130, 145, 170))
+            setPadding(4, 8, 4, 4)
+        }
+        root.addView(effectsTitle)
+        val presets = row(root)
+        listOf("Original", "B&W", "Negative", "Cinematic").forEach { preset ->
+            button(preset) {
+                effectSettings.preset = preset
+                if (preset == "Cinematic") { effectSettings.brightness = -0.04f; effectSettings.contrast = 0.18f }
+                if (preset == "Original") { effectSettings.brightness = 0f; effectSettings.contrast = 0f; effectSettings.zoom = 1f; effectSettings.rotation = 0f }
+                applyPreviewEffects()
+                effectInfo.text = "Preset: $preset"
+            }.also { presets.addView(it, weighted()) }
+        }
+        effectInfo = TextView(this).apply {
+            text = "Preset: Original • Brightness 0 • Contrast 0 • Zoom 1.00× • Rotation 0°"
+            textSize = 9f
+            setTextColor(Color.LTGRAY)
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        root.addView(effectInfo, LinearLayout.LayoutParams(-1, 24))
+        root.addView(TextView(this).apply {
+            text = "BRIGHTNESS"
+            textSize = 9f
+            setTextColor(Color.rgb(145, 160, 185))
+        })
+        val brightnessBar = SeekBar(this).apply {
+            max = 200
+            progress = 100
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) { effectSettings.brightness = (progress - 100) / 100f; effectSettings.preset = "Custom"; applyPreviewEffects(); updateEffectInfo() }
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        root.addView(brightnessBar, LinearLayout.LayoutParams(-1, 30))
+        root.addView(TextView(this).apply {
+            text = "CONTRAST"
+            textSize = 9f
+            setTextColor(Color.rgb(145, 160, 185))
+        })
+        val contrastBar = SeekBar(this).apply {
+            max = 200
+            progress = 100
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) { effectSettings.contrast = (progress - 100) / 100f; effectSettings.preset = "Custom"; applyPreviewEffects(); updateEffectInfo() }
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        root.addView(contrastBar, LinearLayout.LayoutParams(-1, 30))
+        val transformRow = row(root)
+        button("ZOOM −") { effectSettings.zoom = (effectSettings.zoom - .1f).coerceAtLeast(.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
+        button("ZOOM +") { effectSettings.zoom = (effectSettings.zoom + .1f).coerceAtMost(2.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
+        button("ROTATE 90°") { effectSettings.rotation = (effectSettings.rotation + 90f) % 360f; applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
+        val keyframeRow = row(root)
+        button("◆ ADD KEYFRAME") { addTransformKeyframe() }.also { keyframeRow.addView(it, weighted(1.4f)) }
+        button("UNDO KEY") { removeLatestKeyframe() }.also { keyframeRow.addView(it, weighted()) }
+        button("CLEAR KEYS") { clearSelectedKeyframes() }.also { keyframeRow.addView(it, weighted()) }
 
         val exportRow = row(root)
         button("EXPORT MP4") { exportProject() }.also { exportRow.addView(it, weighted(1f)) }
@@ -380,7 +462,14 @@ class MainActivity : ComponentActivity() {
             clips.forEach { videos.put(JSONObject().put("id", it.id).put("uri", it.uri.toString()).put("start", it.startMs).put("end", it.endMs)) }
             audioClips.forEach { audios.put(JSONObject().put("id", it.id).put("uri", it.uri.toString()).put("duration", it.durationMs)) }
             titleLayers.forEach { texts.put(JSONObject().put("id", it.id).put("value", it.value)) }
+            val keyJson = JSONArray()
+            transformKeyframes.forEach { (clipId, keys) -> keys.forEach { key ->
+                keyJson.put(JSONObject().put("clipId", clipId).put("time", key.timeMs).put("scale", key.scale).put("rotation", key.rotationDegrees))
+            } }
+            val fx = JSONObject().put("preset", effectSettings.preset).put("brightness", effectSettings.brightness)
+                .put("contrast", effectSettings.contrast).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation)
             root.put("videos", videos).put("audio", audios).put("texts", texts).put("selectedVideo", selectedClip)
+                .put("keyframes", keyJson).put("effects", fx)
             getSharedPreferences("editor_project", Context.MODE_PRIVATE).edit().putString("project_json", root.toString()).apply()
             status.text = "Project saved on this device"; toast("Project saved")
         } catch (e: Exception) { toast("Project save failed") }
@@ -395,10 +484,28 @@ class MainActivity : ComponentActivity() {
             for (i in 0 until videos.length()) { val v = videos.getJSONObject(i); val start = v.optLong("start", 0); val end = v.optLong("end", 0); if (end > start) clips.add(Clip(v.optLong("id", nextId++), Uri.parse(v.getString("uri")), start, end)) }
             val audios = root.optJSONArray("audio") ?: JSONArray()
             for (i in 0 until audios.length()) { val a = audios.getJSONObject(i); audioClips.add(AudioClip(a.optLong("id", nextAudioId++), Uri.parse(a.getString("uri")), a.optLong("duration", 0))) }
+            transformKeyframes.clear()
+            val savedKeys = root.optJSONArray("keyframes") ?: JSONArray()
+            for (i in 0 until savedKeys.length()) {
+                val k = savedKeys.getJSONObject(i)
+                val id = k.optLong("clipId")
+                transformKeyframes.getOrPut(id) { mutableListOf() }.add(
+                    TransformKeyframe(k.optLong("time"), k.optDouble("scale", 1.0).toFloat(), k.optDouble("rotation", 0.0).toFloat())
+                )
+            }
+            val fx = root.optJSONObject("effects")
+            if (fx != null) {
+                effectSettings.preset = fx.optString("preset", "Original")
+                effectSettings.brightness = fx.optDouble("brightness", 0.0).toFloat()
+                effectSettings.contrast = fx.optDouble("contrast", 0.0).toFloat()
+                effectSettings.zoom = fx.optDouble("zoom", 1.0).toFloat()
+                effectSettings.rotation = fx.optDouble("rotation", 0.0).toFloat()
+                if (::effectInfo.isInitialized) updateEffectInfo()
+            }
             val texts = root.optJSONArray("texts") ?: JSONArray()
             for (i in 0 until texts.length()) { val t = texts.getJSONObject(i); titleLayers.add(TextLayer(t.optLong("id", nextTextId++), t.getString("value"))) }
             selectedClip = root.optInt("selectedVideo", 0).coerceIn(0, (clips.size - 1).coerceAtLeast(0))
-            rebuildPlaylist(); rebuildAudioPlaylist(); renderTimeline(); renderAudioTimeline()
+            rebuildPlaylist(); rebuildAudioPlaylist(); renderTimeline(); renderAudioTimeline(); applyPreviewEffects()
             titleLayers.forEach { layer -> val overlay = TextView(this).apply { text = layer.value; textSize = 26f; typeface = Typeface.create("sans-serif", Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER }; previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); textOverlays[layer.id] = overlay }
             renderTextTimeline(); status.text = "Project loaded"; toast("Project loaded")
         } catch (e: Exception) { toast("Project load failed") }
@@ -411,7 +518,7 @@ class MainActivity : ComponentActivity() {
             val media = MediaItem.Builder().setUri(clip.uri).setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder().setStartPositionMs(clip.startMs).setEndPositionMs(clip.endMs).build()
             ).build()
-            EditedMediaItem.Builder(media).build()
+            EditedMediaItem.Builder(media).setEffects(Effects(emptyList(), buildVideoEffects(clip.id))).build()
         }
         val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(videoItems)
         val sequences = mutableListOf(videoSequence)
@@ -439,6 +546,70 @@ class MainActivity : ComponentActivity() {
         try { transformer.start(composition, output.absolutePath) }
         catch (e: Exception) { status.text = "Export could not start"; toast(e.message ?: "Export error") }
     }
+
+    @OptIn(UnstableApi::class)
+    private fun buildVideoEffects(clipId: Long): List<androidx.media3.common.Effect> {
+        val effects = mutableListOf<androidx.media3.common.Effect>()
+        when (effectSettings.preset) {
+            "B&W" -> effects.add(RgbFilter.createGrayscaleFilter())
+            "Negative" -> effects.add(RgbFilter.createInvertedFilter())
+        }
+        if (effectSettings.brightness != 0f) effects.add(Brightness(effectSettings.brightness.coerceIn(-1f, 1f)))
+        if (effectSettings.contrast != 0f) effects.add(Contrast(effectSettings.contrast.coerceIn(-1f, 1f)))
+        val keys = transformKeyframes[clipId].orEmpty()
+        if (keys.isNotEmpty()) {
+            effects.add(KeyframedTransform(keys, effectSettings.zoom, effectSettings.rotation))
+        } else if (effectSettings.zoom != 1f || effectSettings.rotation != 0f) {
+            effects.add(ScaleAndRotateTransformation.Builder()
+                .setScale(effectSettings.zoom, effectSettings.zoom)
+                .setRotationDegrees(effectSettings.rotation).build())
+        }
+        return effects
+    }
+
+    @OptIn(UnstableApi::class)
+    private fun applyPreviewEffects() {
+        val index = selectedClip
+        if (index !in clips.indices) return
+        try { player?.setVideoEffects(buildVideoEffects(clips[index].id)) }
+        catch (e: Exception) { status.text = "Preview effect unavailable: " + (e.message ?: "unsupported effect") }
+    }
+
+    private fun updateEffectInfo() {
+        if (!::effectInfo.isInitialized) return
+        effectInfo.text = "Preset: ${effectSettings.preset} • Brightness ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}°"
+    }
+
+    private fun addTransformKeyframe() {
+        if (selectedClip !in clips.indices) { toast("Select a video clip first"); return }
+        val clip = clips[selectedClip]
+        val time = (player?.currentPosition ?: 0L).coerceAtLeast(0L)
+        val keys = transformKeyframes.getOrPut(clip.id) { mutableListOf() }
+        keys.removeAll { kotlin.math.abs(it.timeMs - time) < 30L }
+        keys.add(TransformKeyframe(time, effectSettings.zoom, effectSettings.rotation))
+        keys.sortBy { it.timeMs }
+        applyPreviewEffects()
+        saveProject()
+        status.text = "Keyframe added at ${time / 1000.0}s"
+    }
+
+    private fun removeLatestKeyframe() {
+        if (selectedClip !in clips.indices) return
+        val id = clips[selectedClip].id
+        val keys = transformKeyframes[id] ?: return
+        if (keys.isNotEmpty()) keys.removeAt(keys.lastIndex)
+        if (keys.isEmpty()) transformKeyframes.remove(id)
+        applyPreviewEffects(); saveProject()
+        status.text = "Last keyframe removed"
+    }
+
+    private fun clearSelectedKeyframes() {
+        if (selectedClip !in clips.indices) return
+        transformKeyframes.remove(clips[selectedClip].id)
+        applyPreviewEffects(); saveProject()
+        status.text = "Keyframes cleared for selected clip"
+    }
+
     private fun rebuildPlaylist() {
         val p = player ?: return
         val items = clips.map { clip ->
@@ -453,6 +624,7 @@ class MainActivity : ComponentActivity() {
         p.setMediaItems(items, selectedClip.coerceIn(0, (items.size - 1).coerceAtLeast(0)), 0)
         p.prepare()
         p.pause()
+        applyPreviewEffects()
     }
 
     private fun splitAtPlayhead() {
