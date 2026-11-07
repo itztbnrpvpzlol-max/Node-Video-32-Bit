@@ -3,6 +3,9 @@ package studio.reimagined.nodevideo
 import android.graphics.Color
 import android.graphics.Typeface
 import android.net.Uri
+import android.content.Context
+import org.json.JSONArray
+import org.json.JSONObject
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -32,17 +35,22 @@ import androidx.media3.ui.PlayerView
 class MainActivity : ComponentActivity() {
     private data class Clip(val id: Long, val uri: Uri, val startMs: Long = 0, val endMs: Long)
     private data class TextLayer(val id: Long, val value: String)
+    private data class AudioClip(val id: Long, val uri: Uri, val durationMs: Long)
 
     private var player: ExoPlayer? = null
+    private var audioPlayer: ExoPlayer? = null
+    private val audioClips = mutableListOf<AudioClip>()
     private val clips = mutableListOf<Clip>()
     private var selectedClip = -1
     private var nextId = 1L
     private lateinit var playerView: PlayerView
     private lateinit var previewContainer: FrameLayout
     private lateinit var textLayers: LinearLayout
+    private lateinit var audioLayers: LinearLayout
     private val textOverlays = mutableMapOf<Long, TextView>()
     private val titleLayers = mutableListOf<TextLayer>()
     private var nextTextId = 1L
+    private var nextAudioId = 1L
     private lateinit var status: TextView
     private lateinit var timeline: LinearLayout
     private lateinit var playButton: Button
@@ -83,6 +91,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val pickAudio = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            uris.forEach { uri ->
+                try { contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+                val retriever = android.media.MediaMetadataRetriever()
+                val duration = try { retriever.setDataSource(this, uri); retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L } catch (_: Exception) { 0L } finally { retriever.release() }
+                if (duration > 0) audioClips.add(AudioClip(nextAudioId++, uri, duration))
+            }
+            renderAudioTimeline(); rebuildAudioPlaylist()
+            status.text = audioClips.size.toString() + " audio clip(s) in project"
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = Color.rgb(12, 14, 20)
@@ -100,6 +121,8 @@ class MainActivity : ComponentActivity() {
                 }
             })
         }
+        audioPlayer = ExoPlayer.Builder(this).build()
+        restoreProject()
         uiHandler.post(progressUpdater)
     }
 
@@ -189,7 +212,9 @@ class MainActivity : ComponentActivity() {
         button("＋ MEDIA") { pickVideos.launch("video/*") }.also { actions.addView(it, weighted(1.4f)) }
         button("＋ TEXT") { showTextLayerDialog() }.also { actions.addView(it, weighted()) }
         button("TEXT −") { removeLatestTextLayer() }.also { actions.addView(it, weighted()) }
-        button("AUDIO") { toast("Audio-track editing is the next engine task") }.also { actions.addView(it, weighted()) }
+        button("＋ AUDIO") { pickAudio.launch(arrayOf("audio/*")) }.also { actions.addView(it, weighted()) }
+        button("SAVE") { saveProject() }.also { actions.addView(it, weighted()) }
+        button("LOAD") { restoreProject() }.also { actions.addView(it, weighted()) }
 
         root.addView(TextView(this).apply {
             text = "TIMELINE  /  TEXT LAYERS"
@@ -205,6 +230,17 @@ class MainActivity : ComponentActivity() {
         val textScroll = HorizontalScrollView(this)
         textScroll.addView(textLayers)
         root.addView(textScroll, LinearLayout.LayoutParams(-1, 48))
+
+        root.addView(TextView(this).apply {
+            text = "TIMELINE  /  AUDIO LAYERS"
+            textSize = 10f
+            setTextColor(Color.rgb(130, 145, 170))
+            setPadding(4, 8, 4, 4)
+        })
+        audioLayers = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(6); setBackgroundColor(Color.rgb(22, 27, 38)) }
+        val audioScroll = HorizontalScrollView(this)
+        audioScroll.addView(audioLayers)
+        root.addView(audioScroll, LinearLayout.LayoutParams(-1, 48))
 
         root.addView(TextView(this).apply {
             text = "Select a clip • Split cuts at the playhead • Delete removes the selected clip"
@@ -299,7 +335,61 @@ class MainActivity : ComponentActivity() {
     private fun togglePlayback() {
         val p = player ?: return
         if (clips.isEmpty()) { pickVideos.launch("video/*"); return }
-        if (p.isPlaying) p.pause() else p.play()
+        if (p.isPlaying) { p.pause(); audioPlayer?.pause() } else { p.play(); audioPlayer?.play() }
+    }
+
+    private fun rebuildAudioPlaylist() {
+        val ap = audioPlayer ?: return
+        ap.setMediaItems(audioClips.map { MediaItem.fromUri(it.uri) })
+        ap.prepare(); ap.pause()
+    }
+
+    private fun renderAudioTimeline() {
+        if (!::audioLayers.isInitialized) return
+        audioLayers.removeAllViews()
+        audioClips.forEachIndexed { index, clip ->
+            val chip = TextView(this).apply {
+                text = "AUDIO " + (index + 1) + " • " + (clip.durationMs / 1000) + "s"
+                textSize = 10f; gravity = Gravity.CENTER; setTextColor(Color.WHITE); setPadding(12)
+                setBackgroundColor(Color.rgb(45, 112, 92))
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity).setTitle("Audio clip " + (index + 1))
+                        .setMessage("Remove this audio clip?").setNegativeButton("CANCEL", null)
+                        .setPositiveButton("REMOVE") { _, _ -> audioClips.removeAt(index); rebuildAudioPlaylist(); renderAudioTimeline(); saveProject() }.show()
+                }
+            }
+            val lp = LinearLayout.LayoutParams(-2, 36); lp.setMargins(3, 2, 3, 2); audioLayers.addView(chip, lp)
+        }
+    }
+
+    private fun saveProject() {
+        try {
+            val root = JSONObject(); val videos = JSONArray(); val audios = JSONArray(); val texts = JSONArray()
+            clips.forEach { videos.put(JSONObject().put("id", it.id).put("uri", it.uri.toString()).put("start", it.startMs).put("end", it.endMs)) }
+            audioClips.forEach { audios.put(JSONObject().put("id", it.id).put("uri", it.uri.toString()).put("duration", it.durationMs)) }
+            titleLayers.forEach { texts.put(JSONObject().put("id", it.id).put("value", it.value)) }
+            root.put("videos", videos).put("audio", audios).put("texts", texts).put("selectedVideo", selectedClip)
+            getSharedPreferences("editor_project", Context.MODE_PRIVATE).edit().putString("project_json", root.toString()).apply()
+            status.text = "Project saved on this device"; toast("Project saved")
+        } catch (e: Exception) { toast("Project save failed") }
+    }
+
+    private fun restoreProject() {
+        val raw = getSharedPreferences("editor_project", Context.MODE_PRIVATE).getString("project_json", null) ?: return
+        try {
+            val root = JSONObject(raw); clips.clear(); audioClips.clear(); titleLayers.clear()
+            textOverlays.values.forEach { previewContainer.removeView(it) }; textOverlays.clear()
+            val videos = root.optJSONArray("videos") ?: JSONArray()
+            for (i in 0 until videos.length()) { val v = videos.getJSONObject(i); val start = v.optLong("start", 0); val end = v.optLong("end", 0); if (end > start) clips.add(Clip(v.optLong("id", nextId++), Uri.parse(v.getString("uri")), start, end)) }
+            val audios = root.optJSONArray("audio") ?: JSONArray()
+            for (i in 0 until audios.length()) { val a = audios.getJSONObject(i); audioClips.add(AudioClip(a.optLong("id", nextAudioId++), Uri.parse(a.getString("uri")), a.optLong("duration", 0))) }
+            val texts = root.optJSONArray("texts") ?: JSONArray()
+            for (i in 0 until texts.length()) { val t = texts.getJSONObject(i); titleLayers.add(TextLayer(t.optLong("id", nextTextId++), t.getString("value"))) }
+            selectedClip = root.optInt("selectedVideo", 0).coerceIn(0, (clips.size - 1).coerceAtLeast(0))
+            rebuildPlaylist(); rebuildAudioPlaylist(); renderTimeline(); renderAudioTimeline()
+            titleLayers.forEach { layer -> val overlay = TextView(this).apply { text = layer.value; textSize = 26f; typeface = Typeface.create("sans-serif", Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER }; previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); textOverlays[layer.id] = overlay }
+            renderTextTimeline(); status.text = "Project loaded"; toast("Project loaded")
+        } catch (e: Exception) { toast("Project load failed") }
     }
 
     private fun rebuildPlaylist() {
@@ -390,7 +480,7 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         uiHandler.removeCallbacks(progressUpdater)
         playerView.player = null
-        player?.release()
+        player?.release(); audioPlayer?.release(); audioPlayer = null
         player = null
         super.onDestroy()
     }
