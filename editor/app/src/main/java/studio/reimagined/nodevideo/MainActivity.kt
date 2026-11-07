@@ -783,6 +783,27 @@ class MainActivity : ComponentActivity() {
         if (effectSettings.contrast != 0f) effects.add(Contrast(effectSettings.contrast.coerceIn(-1f, 1f)))
         if (effectSettings.saturation != 0f || effectSettings.hue != 0f) effects.add(HslAdjustment.Builder().adjustSaturation(effectSettings.saturation.coerceIn(-100f, 100f)).adjustHue(effectSettings.hue.coerceIn(-180f, 180f)).build())
         if (effectSettings.blur > 0f) effects.add(GaussianBlur(effectSettings.blur.coerceIn(0.5f, 12f)))
+        if (effectSettings.zoom != 1f || effectSettings.rotation != 0f || transformKeyframes[clipId].orEmpty().isNotEmpty()) {
+            val keys = transformKeyframes[clipId].orEmpty()
+            if (keys.isNotEmpty()) effects.add(KeyframedTransform(keys, effectSettings.zoom, effectSettings.rotation))
+            else effects.add(ScaleAndRotateTransformation.Builder()
+                .setScale(effectSettings.zoom, effectSettings.zoom)
+                .setRotationDegrees(effectSettings.rotation).build())
+        }
+        if (titleLayers.isNotEmpty()) {
+            val textOverlays = titleLayers.map { layer ->
+                AnimatedCaptionOverlay(
+                    layer.value,
+                    transformKeyframes[clipId].orEmpty(),
+                    effectSettings.zoom,
+                    effectSettings.rotation,
+                    effectSettings.opacity,
+                    effectSettings.posX,
+                    effectSettings.posY
+                )
+            }
+            effects.add(OverlayEffect(textOverlays))
+        }
         val bitmapOverlays = imageLayers.mapNotNull { layer ->
             try {
                 val bitmap = contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) }
@@ -791,20 +812,7 @@ class MainActivity : ComponentActivity() {
                 ) else null
             } catch (_: Exception) { null }
         }
-        if (titleLayers.isNotEmpty()) {
-            val textOverlays = titleLayers.map { layer ->
-                AnimatedCaptionOverlay(layer.value, transformKeyframes[clipId].orEmpty())
-            }
-            effects.add(OverlayEffect(textOverlays))
-        }
-        val keys = transformKeyframes[clipId].orEmpty()
-        if (keys.isNotEmpty()) {
-            effects.add(KeyframedTransform(keys, effectSettings.zoom, effectSettings.rotation))
-        } else if (effectSettings.zoom != 1f || effectSettings.rotation != 0f) {
-            effects.add(ScaleAndRotateTransformation.Builder()
-                .setScale(effectSettings.zoom, effectSettings.zoom)
-                .setRotationDegrees(effectSettings.rotation).build())
-        }
+        if (bitmapOverlays.isNotEmpty()) effects.add(OverlayEffect(bitmapOverlays))
         return effects
     }
 
