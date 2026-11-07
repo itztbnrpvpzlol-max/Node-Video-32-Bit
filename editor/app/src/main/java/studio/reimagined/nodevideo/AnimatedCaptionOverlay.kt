@@ -13,7 +13,12 @@ import androidx.media3.common.util.UnstableApi
 @UnstableApi
 class AnimatedCaptionOverlay(
     value: String,
-    private val keyframes: List<TransformKeyframe>
+    private val keyframes: List<TransformKeyframe>,
+    private val fallbackScale: Float = 1f,
+    private val fallbackRotation: Float = 0f,
+    private val fallbackAlpha: Float = 1f,
+    private val fallbackX: Float = 0f,
+    private val fallbackY: Float = 0f
 ) : TextOverlay() {
     private val styledText = SpannableString(value).apply {
         if (isNotEmpty()) {
@@ -26,7 +31,12 @@ class AnimatedCaptionOverlay(
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
         val ordered = keyframes.sortedBy { it.timeMs }
-        if (ordered.isEmpty()) return OverlaySettings.Builder().setScale(0.65f, 0.65f).build()
+        if (ordered.isEmpty()) return OverlaySettings.Builder()
+            .setScale((fallbackScale * 0.65f).coerceIn(0.1f, 1.5f), (fallbackScale * 0.65f).coerceIn(0.1f, 1.5f))
+            .setRotationDegrees(fallbackRotation)
+            .setAlphaScale(fallbackAlpha.coerceIn(0f, 1f))
+            .setBackgroundFrameAnchor(fallbackX.coerceIn(-1f, 1f), fallbackY.coerceIn(-1f, 1f))
+            .build()
         val timeMs = presentationTimeUs / 1000L
         val values = when {
             timeMs <= ordered.first().timeMs -> listOf(ordered.first().scale, ordered.first().rotationDegrees, ordered.first().alpha, ordered.first().x, ordered.first().y)
