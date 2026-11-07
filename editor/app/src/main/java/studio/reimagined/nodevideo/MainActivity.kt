@@ -1,11 +1,15 @@
 package studio.reimagined.nodevideo
 
 import android.graphics.Color
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.widget.FrameLayout
+import android.widget.EditText
+import androidx.appcompat.app.AlertDialog
 import android.view.View
 import android.widget.Button
 import android.widget.HorizontalScrollView
@@ -27,12 +31,18 @@ import androidx.media3.ui.PlayerView
  */
 class MainActivity : ComponentActivity() {
     private data class Clip(val id: Long, val uri: Uri, val startMs: Long = 0, val endMs: Long)
+    private data class TextLayer(val id: Long, val value: String)
 
     private var player: ExoPlayer? = null
     private val clips = mutableListOf<Clip>()
     private var selectedClip = -1
     private var nextId = 1L
     private lateinit var playerView: PlayerView
+    private lateinit var previewContainer: FrameLayout
+    private lateinit var textLayers: LinearLayout
+    private val textOverlays = mutableMapOf<Long, TextView>()
+    private val titleLayers = mutableListOf<TextLayer>()
+    private var nextTextId = 1L
     private lateinit var status: TextView
     private lateinit var timeline: LinearLayout
     private lateinit var playButton: Button
@@ -113,11 +123,13 @@ class MainActivity : ComponentActivity() {
             setTextColor(Color.rgb(130, 145, 170))
         }, LinearLayout.LayoutParams(-1, 24))
 
+        previewContainer = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         playerView = PlayerView(this).apply {
             useController = false
             setBackgroundColor(Color.BLACK)
         }
-        root.addView(playerView, LinearLayout.LayoutParams(-1, 0, 1f))
+        previewContainer.addView(playerView, FrameLayout.LayoutParams(-1, -1))
+        root.addView(previewContainer, LinearLayout.LayoutParams(-1, 0, 1f))
 
         status = TextView(this).apply {
             text = "Import media to start editing"
@@ -175,9 +187,24 @@ class MainActivity : ComponentActivity() {
 
         val actions = row(root)
         button("＋ MEDIA") { pickVideos.launch("video/*") }.also { actions.addView(it, weighted(1.4f)) }
-        button("TEXT") { toast("Text layers are next on the implementation list") }.also { actions.addView(it, weighted()) }
-        button("AUDIO") { toast("Audio tracks are next on the implementation list") }.also { actions.addView(it, weighted()) }
-        button("FX") { toast("Effects panel is next on the implementation list") }.also { actions.addView(it, weighted()) }
+        button("＋ TEXT") { showTextLayerDialog() }.also { actions.addView(it, weighted()) }
+        button("TEXT −") { removeLatestTextLayer() }.also { actions.addView(it, weighted()) }
+        button("AUDIO") { toast("Audio-track editing is the next engine task") }.also { actions.addView(it, weighted()) }
+
+        root.addView(TextView(this).apply {
+            text = "TIMELINE  /  TEXT LAYERS"
+            textSize = 10f
+            setTextColor(Color.rgb(130, 145, 170))
+            setPadding(4, 8, 4, 4)
+        })
+        textLayers = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(6)
+            setBackgroundColor(Color.rgb(22, 27, 38))
+        }
+        val textScroll = HorizontalScrollView(this)
+        textScroll.addView(textLayers)
+        root.addView(textScroll, LinearLayout.LayoutParams(-1, 48))
 
         root.addView(TextView(this).apply {
             text = "Select a clip • Split cuts at the playhead • Delete removes the selected clip"
@@ -203,6 +230,70 @@ class MainActivity : ComponentActivity() {
         textSize = 10f
         isAllCaps = false
         setOnClickListener { action() }
+    }
+
+    private fun showTextLayerDialog() {
+        val input = EditText(this).apply {
+            hint = "Enter title or caption"
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            setPadding(24, 18, 24, 18)
+            setSingleLine(false)
+            minLines = 2
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Add text layer")
+            .setView(input)
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("ADD") { _, _ ->
+                val value = input.text.toString().trim()
+                if (value.isNotEmpty()) {
+                    val layer = TextLayer(nextTextId++, value)
+                    titleLayers.add(layer)
+                    val overlay = TextView(this).apply {
+                        text = value
+                        textSize = 26f
+                        typeface = Typeface.create("sans-serif", Typeface.BOLD)
+                        setTextColor(Color.WHITE)
+                        setShadowLayer(6f, 2f, 2f, Color.BLACK)
+                        gravity = Gravity.CENTER
+                        setPadding(16)
+                    }
+                    previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+                    textOverlays[layer.id] = overlay
+                    renderTextTimeline()
+                    status.text = "Added text layer " + titleLayers.size
+                }
+            }.show()
+    }
+
+    private fun removeLatestTextLayer() {
+        val layer = titleLayers.lastOrNull() ?: run {
+            toast("There are no text layers to remove")
+            return
+        }
+        titleLayers.remove(layer)
+        textOverlays.remove(layer.id)?.let { previewContainer.removeView(it) }
+        renderTextTimeline()
+        status.text = "Removed text layer"
+    }
+
+    private fun renderTextTimeline() {
+        if (!::textLayers.isInitialized) return
+        textLayers.removeAllViews()
+        titleLayers.forEachIndexed { index, layer ->
+            val chip = TextView(this).apply {
+                text = "TEXT " + (index + 1) + ": " + layer.value
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setPadding(12)
+                setBackgroundColor(Color.rgb(93, 65, 135))
+            }
+            val lp = LinearLayout.LayoutParams(-2, 36)
+            lp.setMargins(3, 2, 3, 2)
+            textLayers.addView(chip, lp)
+        }
     }
 
     private fun togglePlayback() {
