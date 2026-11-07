@@ -8,6 +8,9 @@ import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 import android.net.Uri
 import android.content.Context
+import android.content.ContentValues
+import android.os.Build
+import android.provider.MediaStore
 import org.json.JSONArray
 import org.json.JSONObject
 import android.os.Bundle
@@ -764,9 +767,10 @@ class MainActivity : ComponentActivity() {
         status.text = "Exporting MP4…"
         val transformer = Transformer.Builder(this).addListener(object : Transformer.Listener {
             override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                val galleryUri = publishExportToGallery(output)
                 status.text = "Export complete: " + output.name
                 AlertDialog.Builder(this@MainActivity).setTitle("Export complete")
-                    .setMessage("Saved MP4 to:\n" + output.absolutePath)
+                    .setMessage(if (galleryUri != null) "Saved to your video gallery:\n" + galleryUri else "Export saved in app storage:\n" + output.absolutePath)
                     .setPositiveButton("OK", null).show()
             }
             override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
@@ -776,6 +780,25 @@ class MainActivity : ComponentActivity() {
         }).build()
         try { transformer.start(composition, output.absolutePath) }
         catch (e: Exception) { status.text = "Export could not start"; toast(e.message ?: "Export error") }
+    }
+
+    private fun publishExportToGallery(source: File): Uri? {
+        if (Build.VERSION.SDK_INT < 29) return null
+        return try {
+            val values = ContentValues().apply {
+                put(MediaStore.Video.Media.DISPLAY_NAME, source.name)
+                put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+                put(MediaStore.Video.Media.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/Node Video Studio")
+                put(MediaStore.Video.Media.IS_PENDING, 1)
+            }
+            val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return null
+            contentResolver.openOutputStream(uri)?.use { output ->
+                source.inputStream().use { input -> input.copyTo(output) }
+            } ?: return null
+            val ready = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
+            contentResolver.update(uri, ready, null, null)
+            uri
+        } catch (_: Exception) { null }
     }
 
     @OptIn(UnstableApi::class)
@@ -796,6 +819,14 @@ class MainActivity : ComponentActivity() {
                 .setScale(effectSettings.zoom, effectSettings.zoom)
                 .setRotationDegrees(effectSettings.rotation).build())
         }
+        val imageOverlayEffects = mutableListOf<androidx.media3.effect.TextureOverlay>()
+        val bitmapOverlays = imageLayers.mapNotNull { layer ->
+            try {
+                val bitmap = contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) }
+                if (bitmap != null) BitmapOverlay.createStaticBitmapOverlay(bitmap, OverlaySettings.Builder().setScale(0.55f, 0.55f).build()) else null
+            } catch (_: Exception) { null }
+        }
+        if (bitmapOverlays.isNotEmpty()) effects.add(OverlayEffect(bitmapOverlays))
         if (titleLayers.isNotEmpty()) {
             val textOverlays = titleLayers.map { layer ->
                 AnimatedCaptionOverlay(
@@ -810,15 +841,6 @@ class MainActivity : ComponentActivity() {
             }
             effects.add(OverlayEffect(textOverlays))
         }
-        val bitmapOverlays = imageLayers.mapNotNull { layer ->
-            try {
-                val bitmap = contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) }
-                if (bitmap != null) BitmapOverlay.createStaticBitmapOverlay(
-                    bitmap, OverlaySettings.Builder().setScale(0.55f, 0.55f).build()
-                ) else null
-            } catch (_: Exception) { null }
-        }
-        if (bitmapOverlays.isNotEmpty()) effects.add(OverlayEffect(bitmapOverlays))
         return effects
     }
 
