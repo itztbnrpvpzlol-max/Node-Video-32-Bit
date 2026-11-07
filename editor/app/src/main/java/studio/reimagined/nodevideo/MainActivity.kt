@@ -44,6 +44,7 @@ import androidx.media3.effect.GaussianBlur
 import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.OverlaySettings
+import androidx.media3.effect.Presentation
 import androidx.media3.effect.TextOverlay
 import androidx.media3.effect.RgbFilter
 import androidx.media3.effect.ScaleAndRotateTransformation
@@ -76,7 +77,8 @@ class MainActivity : ComponentActivity() {
         var rotation: Float = 0f,
         var opacity: Float = 1f,
         var posX: Float = 0f,
-        var posY: Float = 0f
+        var posY: Float = 0f,
+        var outputHeight: Int = 1080
     )
     private val effectSettings = EffectSettings()
     private val transformKeyframes = mutableMapOf<Long, MutableList<TransformKeyframe>>()
@@ -402,6 +404,14 @@ class MainActivity : ComponentActivity() {
         keyScroll.addView(keyframeLayers)
         root.addView(keyScroll, LinearLayout.LayoutParams(-1, 42))
 
+        val resolutionRow = row(root)
+        listOf(480, 720, 1080).forEach { height ->
+            button(height.toString() + "p") {
+                effectSettings.outputHeight = height
+                updateEffectInfo()
+                saveProject()
+            }.also { resolutionRow.addView(it, weighted()) }
+        }
         val exportRow = row(root)
         button("EXPORT MP4") { exportProject() }.also { exportRow.addView(it, weighted(1f)) }
 
@@ -678,7 +688,7 @@ class MainActivity : ComponentActivity() {
                 keyJson.put(JSONObject().put("clipId", clipId).put("time", key.timeMs).put("scale", key.scale).put("rotation", key.rotationDegrees).put("alpha", key.alpha).put("x", key.x).put("y", key.y))
             } }
             val fx = JSONObject().put("preset", effectSettings.preset).put("brightness", effectSettings.brightness)
-                .put("contrast", effectSettings.contrast).put("saturation", effectSettings.saturation).put("hue", effectSettings.hue).put("blur", effectSettings.blur).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation).put("opacity", effectSettings.opacity).put("posX", effectSettings.posX).put("posY", effectSettings.posY)
+                .put("contrast", effectSettings.contrast).put("saturation", effectSettings.saturation).put("hue", effectSettings.hue).put("blur", effectSettings.blur).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation).put("opacity", effectSettings.opacity).put("posX", effectSettings.posX).put("posY", effectSettings.posY).put("outputHeight", effectSettings.outputHeight)
             root.put("videos", videos).put("audio", audios).put("texts", texts).put("selectedVideo", selectedClip)
                 .put("keyframes", keyJson).put("effects", fx).put("images", images)
             getSharedPreferences("editor_project", Context.MODE_PRIVATE).edit().putString("project_json", root.toString()).apply()
@@ -730,6 +740,7 @@ class MainActivity : ComponentActivity() {
                 effectSettings.opacity = fx.optDouble("opacity", 1.0).toFloat()
                 effectSettings.posX = fx.optDouble("posX", 0.0).toFloat()
                 effectSettings.posY = fx.optDouble("posY", 0.0).toFloat()
+                effectSettings.outputHeight = fx.optInt("outputHeight", 1080).coerceIn(480, 1080)
                 if (::effectInfo.isInitialized) updateEffectInfo()
             }
             val texts = root.optJSONArray("texts") ?: JSONArray()
@@ -752,7 +763,7 @@ class MainActivity : ComponentActivity() {
             val media = MediaItem.Builder().setUri(clip.uri).setClippingConfiguration(
                 MediaItem.ClippingConfiguration.Builder().setStartPositionMs(clip.startMs).setEndPositionMs(clip.endMs).build()
             ).build()
-            EditedMediaItem.Builder(media).setEffects(Effects(emptyList(), buildVideoEffects(clip.id))).build()
+            EditedMediaItem.Builder(media).setEffects(Effects(emptyList(), buildVideoEffects(clip.id, includeOutputFormat = true))).build()
         }
         val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(videoItems)
         val sequences = mutableListOf(videoSequence)
@@ -802,7 +813,7 @@ class MainActivity : ComponentActivity() {
     }
 
     @OptIn(UnstableApi::class)
-    private fun buildVideoEffects(clipId: Long): List<androidx.media3.common.Effect> {
+    private fun buildVideoEffects(clipId: Long, includeOutputFormat: Boolean = false): List<androidx.media3.common.Effect> {
         val effects = mutableListOf<androidx.media3.common.Effect>()
         when (effectSettings.preset) {
             "B&W" -> effects.add(RgbFilter.createGrayscaleFilter())
@@ -840,6 +851,7 @@ class MainActivity : ComponentActivity() {
             }
             effects.add(OverlayEffect(textOverlays))
         }
+        if (includeOutputFormat) effects.add(Presentation.createForHeight(effectSettings.outputHeight))
         return effects
     }
 
@@ -853,7 +865,7 @@ class MainActivity : ComponentActivity() {
 
     private fun updateEffectInfo() {
         if (!::effectInfo.isInitialized) return
-        effectInfo.text = "Preset: ${effectSettings.preset} • Bright ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Sat ${effectSettings.saturation.toInt()} • Hue ${effectSettings.hue.toInt()}° • Blur ${effectSettings.blur.toInt()} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}° • Text opacity ${(effectSettings.opacity * 100).toInt()}% • X ${effectSettings.posX} • Y ${effectSettings.posY}"
+        effectInfo.text = "Preset: ${effectSettings.preset} • Bright ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Sat ${effectSettings.saturation.toInt()} • Hue ${effectSettings.hue.toInt()}° • Blur ${effectSettings.blur.toInt()} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}° • Text opacity ${(effectSettings.opacity * 100).toInt()}% • X ${effectSettings.posX} • Y ${effectSettings.posY} • Output ${effectSettings.outputHeight}p"
     }
 
 
