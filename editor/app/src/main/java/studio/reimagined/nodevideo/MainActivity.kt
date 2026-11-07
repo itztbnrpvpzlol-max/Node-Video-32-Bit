@@ -70,7 +70,8 @@ class MainActivity : ComponentActivity() {
         var hue: Float = 0f,
         var blur: Float = 0f,
         var zoom: Float = 1f,
-        var rotation: Float = 0f
+        var rotation: Float = 0f,
+        var opacity: Float = 1f
     )
     private val effectSettings = EffectSettings()
     private val transformKeyframes = mutableMapOf<Long, MutableList<TransformKeyframe>>()
@@ -355,6 +356,7 @@ class MainActivity : ComponentActivity() {
         button("ZOOM +") { effectSettings.zoom = (effectSettings.zoom + .1f).coerceAtMost(2.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
         button("ROTATE 90°") { effectSettings.rotation = (effectSettings.rotation + 90f) % 360f; applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
         button("BLUR") { effectSettings.blur = when (effectSettings.blur) { 0f -> 4f; 4f -> 9f; else -> 0f }; applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
+        button("FADE TEXT") { effectSettings.opacity = when (effectSettings.opacity) { 1f -> 0.5f; 0.5f -> 0.2f; else -> 1f }; updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
         val keyframeRow = row(root)
         button("◆ ADD KEYFRAME") { addTransformKeyframe() }.also { keyframeRow.addView(it, weighted(1.4f)) }
         button("UNDO KEY") { removeLatestKeyframe() }.also { keyframeRow.addView(it, weighted()) }
@@ -614,10 +616,10 @@ class MainActivity : ComponentActivity() {
             imageLayers.forEach { images.put(JSONObject().put("id", it.id).put("uri", it.uri.toString())) }
             val keyJson = JSONArray()
             transformKeyframes.forEach { (clipId, keys) -> keys.forEach { key ->
-                keyJson.put(JSONObject().put("clipId", clipId).put("time", key.timeMs).put("scale", key.scale).put("rotation", key.rotationDegrees))
+                keyJson.put(JSONObject().put("clipId", clipId).put("time", key.timeMs).put("scale", key.scale).put("rotation", key.rotationDegrees).put("alpha", key.alpha))
             } }
             val fx = JSONObject().put("preset", effectSettings.preset).put("brightness", effectSettings.brightness)
-                .put("contrast", effectSettings.contrast).put("saturation", effectSettings.saturation).put("hue", effectSettings.hue).put("blur", effectSettings.blur).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation)
+                .put("contrast", effectSettings.contrast).put("saturation", effectSettings.saturation).put("hue", effectSettings.hue).put("blur", effectSettings.blur).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation).put("opacity", effectSettings.opacity)
             root.put("videos", videos).put("audio", audios).put("texts", texts).put("selectedVideo", selectedClip)
                 .put("keyframes", keyJson).put("effects", fx).put("images", images)
             getSharedPreferences("editor_project", Context.MODE_PRIVATE).edit().putString("project_json", root.toString()).apply()
@@ -653,7 +655,7 @@ class MainActivity : ComponentActivity() {
                 val k = savedKeys.getJSONObject(i)
                 val id = k.optLong("clipId")
                 transformKeyframes.getOrPut(id) { mutableListOf() }.add(
-                    TransformKeyframe(k.optLong("time"), k.optDouble("scale", 1.0).toFloat(), k.optDouble("rotation", 0.0).toFloat())
+                    TransformKeyframe(k.optLong("time"), k.optDouble("scale", 1.0).toFloat(), k.optDouble("rotation", 0.0).toFloat(), k.optDouble("alpha", 1.0).toFloat())
                 )
             }
             val fx = root.optJSONObject("effects")
@@ -666,6 +668,7 @@ class MainActivity : ComponentActivity() {
                 effectSettings.blur = fx.optDouble("blur", 0.0).toFloat()
                 effectSettings.zoom = fx.optDouble("zoom", 1.0).toFloat()
                 effectSettings.rotation = fx.optDouble("rotation", 0.0).toFloat()
+                effectSettings.opacity = fx.optDouble("opacity", 1.0).toFloat()
                 if (::effectInfo.isInitialized) updateEffectInfo()
             }
             val texts = root.optJSONArray("texts") ?: JSONArray()
@@ -759,7 +762,7 @@ class MainActivity : ComponentActivity() {
 
     private fun updateEffectInfo() {
         if (!::effectInfo.isInitialized) return
-        effectInfo.text = "Preset: ${effectSettings.preset} • Bright ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Sat ${effectSettings.saturation.toInt()} • Hue ${effectSettings.hue.toInt()}° • Blur ${effectSettings.blur.toInt()} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}°"
+        effectInfo.text = "Preset: ${effectSettings.preset} • Bright ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Sat ${effectSettings.saturation.toInt()} • Hue ${effectSettings.hue.toInt()}° • Blur ${effectSettings.blur.toInt()} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}° • Text opacity ${(effectSettings.opacity * 100).toInt()}%"
     }
 
 
@@ -798,7 +801,7 @@ class MainActivity : ComponentActivity() {
         val time = (player?.currentPosition ?: 0L).coerceAtLeast(0L)
         val keys = transformKeyframes.getOrPut(clip.id) { mutableListOf() }
         keys.removeAll { kotlin.math.abs(it.timeMs - time) < 30L }
-        keys.add(TransformKeyframe(time, effectSettings.zoom, effectSettings.rotation))
+        keys.add(TransformKeyframe(time, effectSettings.zoom, effectSettings.rotation, effectSettings.opacity))
         keys.sortBy { it.timeMs }
         applyPreviewEffects()
         saveProject()
