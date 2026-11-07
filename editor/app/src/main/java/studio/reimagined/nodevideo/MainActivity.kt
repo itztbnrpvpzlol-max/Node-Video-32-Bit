@@ -43,7 +43,8 @@ import androidx.media3.effect.Contrast
 import androidx.media3.effect.GaussianBlur
 import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.OverlayEffect
-import androidx.media3.effect.OverlaySettings
+import androidx.media3.common.OverlaySettings
+import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.Presentation
 import androidx.media3.effect.TextOverlay
 import androidx.media3.effect.RgbFilter
@@ -833,7 +834,7 @@ class MainActivity : ComponentActivity() {
         val bitmapOverlays = imageLayers.mapNotNull { layer ->
             try {
                 val bitmap = contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) }
-                if (bitmap != null) BitmapOverlay.createStaticBitmapOverlay(bitmap, OverlaySettings.Builder().setScale(0.55f, 0.55f).build()) else null
+                if (bitmap != null) BitmapOverlay.createStaticBitmapOverlay(bitmap, StaticOverlaySettings.Builder().setScale(0.55f, 0.55f).build()) else null
             } catch (_: Exception) { null }
         }
         if (bitmapOverlays.isNotEmpty()) effects.add(OverlayEffect(bitmapOverlays))
