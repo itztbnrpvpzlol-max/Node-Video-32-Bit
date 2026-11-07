@@ -5,8 +5,7 @@ import android.graphics.Typeface
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
-import androidx.media3.common.OverlaySettings
-import androidx.media3.effect.StaticOverlaySettings
+import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.TextOverlay
 import androidx.media3.common.util.UnstableApi
 
@@ -32,7 +31,7 @@ class AnimatedCaptionOverlay(
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings {
         val ordered = keyframes.sortedBy { it.timeMs }
-        if (ordered.isEmpty()) return StaticOverlaySettings.Builder()
+        if (ordered.isEmpty()) return OverlaySettings.Builder()
             .setScale((fallbackScale * 0.65f).coerceIn(0.1f, 1.5f), (fallbackScale * 0.65f).coerceIn(0.1f, 1.5f))
             .setRotationDegrees(fallbackRotation)
             .setAlphaScale(fallbackAlpha.coerceIn(0f, 1f))
