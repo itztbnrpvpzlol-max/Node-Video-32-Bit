@@ -9,6 +9,8 @@ import org.json.JSONObject
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.Environment
+import java.io.File
 import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.EditText
@@ -26,6 +28,13 @@ import androidx.core.view.setPadding
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.EditedMediaItemSequence
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
 import androidx.media3.ui.PlayerView
 
 /**
@@ -190,6 +199,9 @@ class MainActivity : ComponentActivity() {
             .also { trimActions.addView(it, weighted()) }
         button("TRIM OUT") { trimAtPlayhead(trimStart = false) }
             .also { trimActions.addView(it, weighted()) }
+
+        val exportRow = row(root)
+        button("EXPORT MP4") { exportProject() }.also { exportRow.addView(it, weighted(1f)) }
 
         root.addView(TextView(this).apply {
             text = "TIMELINE  /  VIDEO 1"
@@ -392,6 +404,41 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) { toast("Project load failed") }
     }
 
+    @OptIn(UnstableApi::class)
+    private fun exportProject() {
+        if (clips.isEmpty()) { toast("Import at least one video before exporting"); return }
+        val videoItems = clips.map { clip ->
+            val media = MediaItem.Builder().setUri(clip.uri).setClippingConfiguration(
+                MediaItem.ClippingConfiguration.Builder().setStartPositionMs(clip.startMs).setEndPositionMs(clip.endMs).build()
+            ).build()
+            EditedMediaItem.Builder(media).build()
+        }
+        val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(videoItems)
+        val sequences = mutableListOf(videoSequence)
+        if (audioClips.isNotEmpty()) {
+            val audioItems = audioClips.map { EditedMediaItem.Builder(MediaItem.fromUri(it.uri)).build() }
+            sequences.add(EditedMediaItemSequence.withAudioFrom(audioItems).buildUpon().setIsLooping(true).build())
+        }
+        val composition = Composition.Builder(sequences).build()
+        val outputDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+        if (!outputDir.exists()) outputDir.mkdirs()
+        val output = File(outputDir, "NodeVideoExport_" + System.currentTimeMillis() + ".mp4")
+        status.text = "Exporting MP4…"
+        val transformer = Transformer.Builder(this).addListener(object : Transformer.Listener {
+            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                status.text = "Export complete: " + output.name
+                AlertDialog.Builder(this@MainActivity).setTitle("Export complete")
+                    .setMessage("Saved MP4 to:\n" + output.absolutePath)
+                    .setPositiveButton("OK", null).show()
+            }
+            override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                status.text = "Export failed"
+                toast("Export failed: " + (exportException.message ?: "unsupported media or codec error"))
+            }
+        }).build()
+        try { transformer.start(composition, output.absolutePath) }
+        catch (e: Exception) { status.text = "Export could not start"; toast(e.message ?: "Export error") }
+    }
     private fun rebuildPlaylist() {
         val p = player ?: return
         val items = clips.map { clip ->
