@@ -2,6 +2,9 @@ package studio.reimagined.nodevideo
 
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.net.Uri
 import android.content.Context
 import org.json.JSONArray
@@ -33,6 +36,9 @@ import androidx.media3.effect.Brightness
 import androidx.media3.effect.Contrast
 import androidx.media3.effect.GaussianBlur
 import androidx.media3.effect.HslAdjustment
+import androidx.media3.effect.OverlayEffect
+import androidx.media3.effect.OverlaySettings
+import androidx.media3.effect.TextOverlay
 import androidx.media3.effect.RgbFilter
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Effects
@@ -450,6 +456,7 @@ class MainActivity : ComponentActivity() {
                     previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
                     textOverlays[layer.id] = overlay
                     renderTextTimeline()
+                    saveProject()
                     status.text = "Added text layer " + titleLayers.size
                 }
             }.show()
@@ -463,6 +470,7 @@ class MainActivity : ComponentActivity() {
         titleLayers.remove(layer)
         textOverlays.remove(layer.id)?.let { previewContainer.removeView(it) }
         renderTextTimeline()
+        saveProject()
         status.text = "Removed text layer"
     }
 
@@ -618,6 +626,19 @@ class MainActivity : ComponentActivity() {
         if (effectSettings.contrast != 0f) effects.add(Contrast(effectSettings.contrast.coerceIn(-1f, 1f)))
         if (effectSettings.saturation != 0f) effects.add(HslAdjustment.Builder().adjustSaturation(effectSettings.saturation.coerceIn(-100f, 100f)).build())
         if (effectSettings.blur > 0f) effects.add(GaussianBlur(effectSettings.blur.coerceIn(0.5f, 12f)))
+        if (titleLayers.isNotEmpty()) {
+            val textOverlays = titleLayers.map { layer ->
+                val styled = SpannableString(layer.value).apply {
+                    setSpan(StyleSpan(Typeface.BOLD), 0, length, SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    setSpan(ForegroundColorSpan(Color.WHITE), 0, length, SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE)
+                }
+                TextOverlay.createStaticTextOverlay(
+                    styled,
+                    OverlaySettings.Builder().setScale(0.65f, 0.65f).build()
+                )
+            }
+            effects.add(OverlayEffect(textOverlays))
+        }
         val keys = transformKeyframes[clipId].orEmpty()
         if (keys.isNotEmpty()) {
             effects.add(KeyframedTransform(keys, effectSettings.zoom, effectSettings.rotation))
