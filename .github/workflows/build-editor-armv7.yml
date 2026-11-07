@@ -30,8 +30,24 @@ jobs:
         run: |
           APK=app/build/outputs/apk/debug/app-debug.apk
           test -f "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep "package:"
-          unzip -l "$APK" | grep "lib/armeabi-v7a" || true
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -n "$AAPT"
+          "$AAPT" dump badging "$APK" | grep "package:"
+          unzip -Z1 "$APK" > /tmp/apk-files.txt
+          grep -q '^classes.dex
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-video-studio-armv7-debug
+          path: editor/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+ /tmp/apk-files.txt
+          if grep -Eq '^lib/arm64-v8a/' /tmp/apk-files.txt; then
+            echo "Unexpected 64-bit-only native library found in ARMv7 target APK"
+            exit 1
+          fi
+          echo "DEX bytecode present; no 64-bit-only native libraries. The Kotlin/Java app can run on supported 32-bit ARM Android devices."
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
