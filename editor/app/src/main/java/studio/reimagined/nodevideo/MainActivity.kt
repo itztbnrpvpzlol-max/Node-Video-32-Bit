@@ -517,6 +517,37 @@ class MainActivity : ComponentActivity() {
             }.show()
     }
 
+    private fun showEditTextLayerDialog(layer: TextLayer) {
+        val input = EditText(this).apply {
+            setText(layer.value)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.GRAY)
+            setPadding(24, 18, 24, 18)
+            minLines = 2
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Edit text layer")
+            .setView(input)
+            .setNeutralButton("DELETE") { _, _ ->
+                titleLayers.removeAll { it.id == layer.id }
+                textOverlays.remove(layer.id)?.let { previewContainer.removeView(it) }
+                renderTextTimeline()
+                saveProject()
+            }
+            .setNegativeButton("CANCEL", null)
+            .setPositiveButton("SAVE") { _, _ ->
+                val updated = input.text.toString().trim()
+                if (updated.isNotEmpty()) {
+                    val index = titleLayers.indexOfFirst { it.id == layer.id }
+                    if (index >= 0) titleLayers[index] = layer.copy(value = updated)
+                    textOverlays[layer.id]?.text = updated
+                    renderTextTimeline()
+                    saveProject()
+                    applyPreviewEffects()
+                }
+            }.show()
+    }
+
     private fun removeLatestTextLayer() {
         val layer = titleLayers.lastOrNull() ?: run {
             toast("There are no text layers to remove")
@@ -540,6 +571,7 @@ class MainActivity : ComponentActivity() {
                 setTextColor(Color.WHITE)
                 setPadding(12)
                 setBackgroundColor(Color.rgb(93, 65, 135))
+                setOnClickListener { showEditTextLayerDialog(layer) }
             }
             val lp = LinearLayout.LayoutParams(-2, 36)
             lp.setMargins(3, 2, 3, 2)
@@ -550,12 +582,13 @@ class MainActivity : ComponentActivity() {
     private fun togglePlayback() {
         val p = player ?: return
         if (clips.isEmpty()) { pickVideos.launch("video/*"); return }
-        if (p.isPlaying) { p.pause(); audioPlayer?.pause() } else { p.play(); audioPlayer?.play() }
+        if (p.isPlaying) { p.pause(); audioPlayer?.pause() } else { audioPlayer?.seekTo(p.currentPosition); p.play(); audioPlayer?.play() }
     }
 
     private fun rebuildAudioPlaylist() {
         val ap = audioPlayer ?: return
         ap.setMediaItems(audioClips.map { MediaItem.fromUri(it.uri) })
+        ap.repeatMode = Player.REPEAT_MODE_ALL
         ap.prepare(); ap.pause()
     }
 
