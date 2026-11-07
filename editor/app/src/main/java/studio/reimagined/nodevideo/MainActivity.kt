@@ -2,6 +2,7 @@ package studio.reimagined.nodevideo
 
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.BitmapFactory
 import android.text.SpannableString
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
@@ -21,6 +22,7 @@ import android.app.AlertDialog
 import android.view.View
 import android.widget.Button
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -33,6 +35,7 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Brightness
+import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.Contrast
 import androidx.media3.effect.GaussianBlur
 import androidx.media3.effect.HslAdjustment
@@ -58,6 +61,7 @@ class MainActivity : ComponentActivity() {
     private data class Clip(val id: Long, val uri: Uri, val startMs: Long = 0, val endMs: Long)
     private data class TextLayer(val id: Long, val value: String)
     private data class AudioClip(val id: Long, val uri: Uri, val durationMs: Long)
+    private data class ImageLayer(val id: Long, val uri: Uri)
     private data class EffectSettings(
         var preset: String = "Original",
         var brightness: Float = 0f,
@@ -76,6 +80,8 @@ class MainActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     private var audioPlayer: ExoPlayer? = null
     private val audioClips = mutableListOf<AudioClip>()
+    private val imageLayers = mutableListOf<ImageLayer>()
+    private val imageOverlays = mutableMapOf<Long, ImageView>()
     private val clips = mutableListOf<Clip>()
     private var selectedClip = -1
     private var nextId = 1L
@@ -83,10 +89,12 @@ class MainActivity : ComponentActivity() {
     private lateinit var previewContainer: FrameLayout
     private lateinit var textLayers: LinearLayout
     private lateinit var audioLayers: LinearLayout
+    private lateinit var imageLayerTimeline: LinearLayout
     private val textOverlays = mutableMapOf<Long, TextView>()
     private val titleLayers = mutableListOf<TextLayer>()
     private var nextTextId = 1L
     private var nextAudioId = 1L
+    private var nextImageId = 1L
     private lateinit var status: TextView
     private lateinit var timeline: LinearLayout
     private lateinit var playButton: Button
@@ -137,6 +145,25 @@ class MainActivity : ComponentActivity() {
             }
             renderAudioTimeline(); rebuildAudioPlaylist()
             status.text = audioClips.size.toString() + " audio clip(s) in project"
+        }
+    }
+
+    private val pickImages = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            uris.forEach { uri ->
+                try { contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) } catch (_: Exception) { }
+                imageLayers.add(ImageLayer(nextImageId++, uri))
+                val bitmap = try { contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) } } catch (_: Exception) { null }
+                if (bitmap != null) {
+                    val imageView = ImageView(this).apply { setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; alpha = 0.95f }
+                    val lp = FrameLayout.LayoutParams(220, 220, Gravity.CENTER)
+                    previewContainer.addView(imageView, lp)
+                    imageOverlays[imageLayers.last().id] = imageView
+                }
+            }
+            renderImageLayerTimeline()
+            saveProject()
+            status.text = "Added image layer(s): " + imageLayers.size
         }
     }
 
@@ -370,6 +397,7 @@ class MainActivity : ComponentActivity() {
         val actions = row(root)
         button("＋ MEDIA") { pickVideos.launch("video/*") }.also { actions.addView(it, weighted(1.4f)) }
         button("＋ TEXT") { showTextLayerDialog() }.also { actions.addView(it, weighted()) }
+        button("＋ IMAGE") { pickImages.launch("image/*") }.also { actions.addView(it, weighted()) }
         button("TEXT −") { removeLatestTextLayer() }.also { actions.addView(it, weighted()) }
         button("＋ AUDIO") { pickAudio.launch(arrayOf("audio/*")) }.also { actions.addView(it, weighted()) }
         button("SAVE") { saveProject() }.also { actions.addView(it, weighted()) }
@@ -389,6 +417,17 @@ class MainActivity : ComponentActivity() {
         val textScroll = HorizontalScrollView(this)
         textScroll.addView(textLayers)
         root.addView(textScroll, LinearLayout.LayoutParams(-1, 48))
+
+        root.addView(TextView(this).apply {
+            text = "TIMELINE  /  IMAGE LAYERS"
+            textSize = 10f
+            setTextColor(Color.rgb(130, 145, 170))
+            setPadding(4, 8, 4, 4)
+        })
+        imageLayerTimeline = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(6); setBackgroundColor(Color.rgb(22, 27, 38)) }
+        val imageScroll = HorizontalScrollView(this)
+        imageScroll.addView(imageLayerTimeline)
+        root.addView(imageScroll, LinearLayout.LayoutParams(-1, 48))
 
         root.addView(TextView(this).apply {
             text = "TIMELINE  /  AUDIO LAYERS"
@@ -518,6 +557,35 @@ class MainActivity : ComponentActivity() {
         ap.prepare(); ap.pause()
     }
 
+    private fun renderImageLayerTimeline() {
+        if (!::imageLayerTimeline.isInitialized) return
+        imageLayerTimeline.removeAllViews()
+        imageLayers.forEachIndexed { index, layer ->
+            val chip = TextView(this).apply {
+                text = "IMAGE " + (index + 1)
+                textSize = 10f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setPadding(12)
+                setBackgroundColor(Color.rgb(55, 105, 145))
+                setOnClickListener {
+                    AlertDialog.Builder(this@MainActivity).setTitle("Image layer " + (index + 1))
+                        .setMessage("Remove this image layer?")
+                        .setNegativeButton("CANCEL", null)
+                        .setPositiveButton("REMOVE") { _, _ ->
+                            imageLayers.remove(layer)
+                            imageOverlays.remove(layer.id)?.let { previewContainer.removeView(it) }
+                            renderImageLayerTimeline()
+                            saveProject()
+                        }.show()
+                }
+            }
+            val lp = LinearLayout.LayoutParams(-2, 36)
+            lp.setMargins(3, 2, 3, 2)
+            imageLayerTimeline.addView(chip, lp)
+        }
+    }
+
     private fun renderAudioTimeline() {
         if (!::audioLayers.isInitialized) return
         audioLayers.removeAllViews()
@@ -542,6 +610,8 @@ class MainActivity : ComponentActivity() {
             clips.forEach { videos.put(JSONObject().put("id", it.id).put("uri", it.uri.toString()).put("start", it.startMs).put("end", it.endMs)) }
             audioClips.forEach { audios.put(JSONObject().put("id", it.id).put("uri", it.uri.toString()).put("duration", it.durationMs)) }
             titleLayers.forEach { texts.put(JSONObject().put("id", it.id).put("value", it.value)) }
+            val images = JSONArray()
+            imageLayers.forEach { images.put(JSONObject().put("id", it.id).put("uri", it.uri.toString())) }
             val keyJson = JSONArray()
             transformKeyframes.forEach { (clipId, keys) -> keys.forEach { key ->
                 keyJson.put(JSONObject().put("clipId", clipId).put("time", key.timeMs).put("scale", key.scale).put("rotation", key.rotationDegrees))
@@ -549,7 +619,7 @@ class MainActivity : ComponentActivity() {
             val fx = JSONObject().put("preset", effectSettings.preset).put("brightness", effectSettings.brightness)
                 .put("contrast", effectSettings.contrast).put("saturation", effectSettings.saturation).put("hue", effectSettings.hue).put("blur", effectSettings.blur).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation)
             root.put("videos", videos).put("audio", audios).put("texts", texts).put("selectedVideo", selectedClip)
-                .put("keyframes", keyJson).put("effects", fx)
+                .put("keyframes", keyJson).put("effects", fx).put("images", images)
             getSharedPreferences("editor_project", Context.MODE_PRIVATE).edit().putString("project_json", root.toString()).apply()
             status.text = "Project saved on this device"; toast("Project saved")
         } catch (e: Exception) { toast("Project save failed") }
@@ -558,10 +628,23 @@ class MainActivity : ComponentActivity() {
     private fun restoreProject() {
         val raw = getSharedPreferences("editor_project", Context.MODE_PRIVATE).getString("project_json", null) ?: return
         try {
-            val root = JSONObject(raw); clips.clear(); audioClips.clear(); titleLayers.clear()
+            val root = JSONObject(raw); clips.clear(); audioClips.clear(); titleLayers.clear(); imageLayers.clear()
             textOverlays.values.forEach { previewContainer.removeView(it) }; textOverlays.clear()
             val videos = root.optJSONArray("videos") ?: JSONArray()
             for (i in 0 until videos.length()) { val v = videos.getJSONObject(i); val start = v.optLong("start", 0); val end = v.optLong("end", 0); if (end > start) clips.add(Clip(v.optLong("id", nextId++), Uri.parse(v.getString("uri")), start, end)) }
+            imageOverlays.values.forEach { previewContainer.removeView(it) }; imageOverlays.clear()
+            val images = root.optJSONArray("images") ?: JSONArray()
+            for (i in 0 until images.length()) {
+                val image = images.getJSONObject(i)
+                val layer = ImageLayer(image.optLong("id", nextImageId++), Uri.parse(image.getString("uri")))
+                imageLayers.add(layer)
+                val bitmap = try { contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) } } catch (_: Exception) { null }
+                if (bitmap != null) {
+                    val view = ImageView(this).apply { setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; alpha = 0.95f }
+                    previewContainer.addView(view, FrameLayout.LayoutParams(220, 220, Gravity.CENTER))
+                    imageOverlays[layer.id] = view
+                }
+            }
             val audios = root.optJSONArray("audio") ?: JSONArray()
             for (i in 0 until audios.length()) { val a = audios.getJSONObject(i); audioClips.add(AudioClip(a.optLong("id", nextAudioId++), Uri.parse(a.getString("uri")), a.optLong("duration", 0))) }
             transformKeyframes.clear()
@@ -588,7 +671,7 @@ class MainActivity : ComponentActivity() {
             val texts = root.optJSONArray("texts") ?: JSONArray()
             for (i in 0 until texts.length()) { val t = texts.getJSONObject(i); titleLayers.add(TextLayer(t.optLong("id", nextTextId++), t.getString("value"))) }
             selectedClip = root.optInt("selectedVideo", 0).coerceIn(0, (clips.size - 1).coerceAtLeast(0))
-            rebuildPlaylist(); rebuildAudioPlaylist(); renderTimeline(); renderAudioTimeline(); renderKeyframeTimeline(); applyPreviewEffects()
+            rebuildPlaylist(); rebuildAudioPlaylist(); renderTimeline(); renderAudioTimeline(); renderImageLayerTimeline(); renderKeyframeTimeline(); applyPreviewEffects()
             titleLayers.forEach { layer -> val overlay = TextView(this).apply { text = layer.value; textSize = 26f; typeface = Typeface.create("sans-serif", Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER }; previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); textOverlays[layer.id] = overlay }
             renderTextTimeline(); status.text = "Project loaded"; toast("Project loaded")
         } catch (e: Exception) { toast("Project load failed") }
@@ -641,6 +724,14 @@ class MainActivity : ComponentActivity() {
         if (effectSettings.contrast != 0f) effects.add(Contrast(effectSettings.contrast.coerceIn(-1f, 1f)))
         if (effectSettings.saturation != 0f || effectSettings.hue != 0f) effects.add(HslAdjustment.Builder().adjustSaturation(effectSettings.saturation.coerceIn(-100f, 100f)).adjustHue(effectSettings.hue.coerceIn(-180f, 180f)).build())
         if (effectSettings.blur > 0f) effects.add(GaussianBlur(effectSettings.blur.coerceIn(0.5f, 12f)))
+        val bitmapOverlays = imageLayers.mapNotNull { layer ->
+            try {
+                val bitmap = contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) }
+                if (bitmap != null) BitmapOverlay.createStaticBitmapOverlay(
+                    bitmap, OverlaySettings.Builder().setScale(0.55f, 0.55f).build()
+                ) else null
+            } catch (_: Exception) { null }
+        }
         if (titleLayers.isNotEmpty()) {
             val textOverlays = titleLayers.map { layer ->
                 AnimatedCaptionOverlay(layer.value, transformKeyframes[clipId].orEmpty())
