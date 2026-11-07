@@ -31,6 +31,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.Brightness
 import androidx.media3.effect.Contrast
+import androidx.media3.effect.GaussianBlur
+import androidx.media3.effect.HslAdjustment
 import androidx.media3.effect.RgbFilter
 import androidx.media3.effect.ScaleAndRotateTransformation
 import androidx.media3.transformer.Effects
@@ -54,12 +56,15 @@ class MainActivity : ComponentActivity() {
         var preset: String = "Original",
         var brightness: Float = 0f,
         var contrast: Float = 0f,
+        var saturation: Float = 0f,
+        var blur: Float = 0f,
         var zoom: Float = 1f,
         var rotation: Float = 0f
     )
     private val effectSettings = EffectSettings()
     private val transformKeyframes = mutableMapOf<Long, MutableList<TransformKeyframe>>()
     private lateinit var effectInfo: TextView
+    private lateinit var keyframeLayers: LinearLayout
 
     private var player: ExoPlayer? = null
     private var audioPlayer: ExoPlayer? = null
@@ -143,6 +148,7 @@ class MainActivity : ComponentActivity() {
                     selectedClip = exo.currentMediaItemIndex
                     renderTimeline()
                     applyPreviewEffects()
+                    renderKeyframeTimeline()
                 }
             })
         }
@@ -280,14 +286,46 @@ class MainActivity : ComponentActivity() {
             })
         }
         root.addView(contrastBar, LinearLayout.LayoutParams(-1, 30))
+        root.addView(TextView(this).apply {
+            text = "SATURATION"
+            textSize = 9f
+            setTextColor(Color.rgb(145, 160, 185))
+        })
+        val saturationBar = SeekBar(this).apply {
+            max = 200
+            progress = 100
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) { effectSettings.saturation = (progress - 100).toFloat(); effectSettings.preset = "Custom"; applyPreviewEffects(); updateEffectInfo() }
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        root.addView(saturationBar, LinearLayout.LayoutParams(-1, 30))
         val transformRow = row(root)
         button("ZOOM −") { effectSettings.zoom = (effectSettings.zoom - .1f).coerceAtLeast(.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
         button("ZOOM +") { effectSettings.zoom = (effectSettings.zoom + .1f).coerceAtMost(2.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
         button("ROTATE 90°") { effectSettings.rotation = (effectSettings.rotation + 90f) % 360f; applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
+        button("BLUR") { effectSettings.blur = when (effectSettings.blur) { 0f -> 4f; 4f -> 9f; else -> 0f }; applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
         val keyframeRow = row(root)
         button("◆ ADD KEYFRAME") { addTransformKeyframe() }.also { keyframeRow.addView(it, weighted(1.4f)) }
         button("UNDO KEY") { removeLatestKeyframe() }.also { keyframeRow.addView(it, weighted()) }
         button("CLEAR KEYS") { clearSelectedKeyframes() }.also { keyframeRow.addView(it, weighted()) }
+        root.addView(TextView(this).apply {
+            text = "KEYFRAME TRACK  /  SELECTED CLIP"
+            textSize = 9f
+            setTextColor(Color.rgb(130, 145, 170))
+            setPadding(4, 6, 4, 4)
+        })
+        keyframeLayers = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(6)
+            setBackgroundColor(Color.rgb(22, 27, 38))
+        }
+        val keyScroll = HorizontalScrollView(this)
+        keyScroll.addView(keyframeLayers)
+        root.addView(keyScroll, LinearLayout.LayoutParams(-1, 42))
 
         val exportRow = row(root)
         button("EXPORT MP4") { exportProject() }.also { exportRow.addView(it, weighted(1f)) }
@@ -487,7 +525,7 @@ class MainActivity : ComponentActivity() {
                 keyJson.put(JSONObject().put("clipId", clipId).put("time", key.timeMs).put("scale", key.scale).put("rotation", key.rotationDegrees))
             } }
             val fx = JSONObject().put("preset", effectSettings.preset).put("brightness", effectSettings.brightness)
-                .put("contrast", effectSettings.contrast).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation)
+                .put("contrast", effectSettings.contrast).put("saturation", effectSettings.saturation).put("blur", effectSettings.blur).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation)
             root.put("videos", videos).put("audio", audios).put("texts", texts).put("selectedVideo", selectedClip)
                 .put("keyframes", keyJson).put("effects", fx)
             getSharedPreferences("editor_project", Context.MODE_PRIVATE).edit().putString("project_json", root.toString()).apply()
@@ -518,6 +556,8 @@ class MainActivity : ComponentActivity() {
                 effectSettings.preset = fx.optString("preset", "Original")
                 effectSettings.brightness = fx.optDouble("brightness", 0.0).toFloat()
                 effectSettings.contrast = fx.optDouble("contrast", 0.0).toFloat()
+                effectSettings.saturation = fx.optDouble("saturation", 0.0).toFloat()
+                effectSettings.blur = fx.optDouble("blur", 0.0).toFloat()
                 effectSettings.zoom = fx.optDouble("zoom", 1.0).toFloat()
                 effectSettings.rotation = fx.optDouble("rotation", 0.0).toFloat()
                 if (::effectInfo.isInitialized) updateEffectInfo()
@@ -525,7 +565,7 @@ class MainActivity : ComponentActivity() {
             val texts = root.optJSONArray("texts") ?: JSONArray()
             for (i in 0 until texts.length()) { val t = texts.getJSONObject(i); titleLayers.add(TextLayer(t.optLong("id", nextTextId++), t.getString("value"))) }
             selectedClip = root.optInt("selectedVideo", 0).coerceIn(0, (clips.size - 1).coerceAtLeast(0))
-            rebuildPlaylist(); rebuildAudioPlaylist(); renderTimeline(); renderAudioTimeline(); applyPreviewEffects()
+            rebuildPlaylist(); rebuildAudioPlaylist(); renderTimeline(); renderAudioTimeline(); renderKeyframeTimeline(); applyPreviewEffects()
             titleLayers.forEach { layer -> val overlay = TextView(this).apply { text = layer.value; textSize = 26f; typeface = Typeface.create("sans-serif", Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER }; previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); textOverlays[layer.id] = overlay }
             renderTextTimeline(); status.text = "Project loaded"; toast("Project loaded")
         } catch (e: Exception) { toast("Project load failed") }
@@ -576,6 +616,8 @@ class MainActivity : ComponentActivity() {
         }
         if (effectSettings.brightness != 0f) effects.add(Brightness(effectSettings.brightness.coerceIn(-1f, 1f)))
         if (effectSettings.contrast != 0f) effects.add(Contrast(effectSettings.contrast.coerceIn(-1f, 1f)))
+        if (effectSettings.saturation != 0f) effects.add(HslAdjustment.Builder().adjustSaturation(effectSettings.saturation.coerceIn(-100f, 100f)).build())
+        if (effectSettings.blur > 0f) effects.add(GaussianBlur(effectSettings.blur.coerceIn(0.5f, 12f)))
         val keys = transformKeyframes[clipId].orEmpty()
         if (keys.isNotEmpty()) {
             effects.add(KeyframedTransform(keys, effectSettings.zoom, effectSettings.rotation))
@@ -597,7 +639,37 @@ class MainActivity : ComponentActivity() {
 
     private fun updateEffectInfo() {
         if (!::effectInfo.isInitialized) return
-        effectInfo.text = "Preset: ${effectSettings.preset} • Brightness ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}°"
+        effectInfo.text = "Preset: ${effectSettings.preset} • Bright ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Sat ${effectSettings.saturation.toInt()} • Blur ${effectSettings.blur.toInt()} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}°"
+    }
+
+
+    private fun renderKeyframeTimeline() {
+        if (!::keyframeLayers.isInitialized) return
+        keyframeLayers.removeAllViews()
+        if (selectedClip !in clips.indices) return
+        val keys = transformKeyframes[clips[selectedClip].id].orEmpty().sortedBy { it.timeMs }
+        if (keys.isEmpty()) {
+            keyframeLayers.addView(TextView(this).apply {
+                text = "No keyframes yet — move the playhead, change zoom/rotation, then tap ADD KEYFRAME"
+                textSize = 9f
+                gravity = Gravity.CENTER_VERTICAL
+                setTextColor(Color.rgb(135, 150, 175))
+            })
+            return
+        }
+        keys.forEach { key ->
+            val chip = TextView(this).apply {
+                text = "◆ " + (key.timeMs / 1000.0) + "s • " + key.scale + "× • " + key.rotationDegrees.toInt() + "°"
+                textSize = 9f
+                gravity = Gravity.CENTER
+                setTextColor(Color.WHITE)
+                setPadding(10)
+                setBackgroundColor(Color.rgb(105, 75, 165))
+            }
+            val lp = LinearLayout.LayoutParams(-2, 30)
+            lp.setMargins(3, 2, 3, 2)
+            keyframeLayers.addView(chip, lp)
+        }
     }
 
     private fun addTransformKeyframe() {
@@ -610,6 +682,7 @@ class MainActivity : ComponentActivity() {
         keys.sortBy { it.timeMs }
         applyPreviewEffects()
         saveProject()
+        renderKeyframeTimeline()
         status.text = "Keyframe added at ${time / 1000.0}s"
     }
 
@@ -619,14 +692,14 @@ class MainActivity : ComponentActivity() {
         val keys = transformKeyframes[id] ?: return
         if (keys.isNotEmpty()) keys.removeAt(keys.lastIndex)
         if (keys.isEmpty()) transformKeyframes.remove(id)
-        applyPreviewEffects(); saveProject()
+        applyPreviewEffects(); saveProject(); renderKeyframeTimeline()
         status.text = "Last keyframe removed"
     }
 
     private fun clearSelectedKeyframes() {
         if (selectedClip !in clips.indices) return
         transformKeyframes.remove(clips[selectedClip].id)
-        applyPreviewEffects(); saveProject()
+        applyPreviewEffects(); saveProject(); renderKeyframeTimeline()
         status.text = "Keyframes cleared for selected clip"
     }
 
@@ -706,6 +779,7 @@ class MainActivity : ComponentActivity() {
                     selectedClip = index
                     player?.seekTo(index, 0)
                     applyPreviewEffects()
+                    renderKeyframeTimeline()
                     renderTimeline()
                 }
             }
