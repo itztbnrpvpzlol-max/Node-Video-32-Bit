@@ -63,6 +63,7 @@ class MainActivity : ComponentActivity() {
         var brightness: Float = 0f,
         var contrast: Float = 0f,
         var saturation: Float = 0f,
+        var hue: Float = 0f,
         var blur: Float = 0f,
         var zoom: Float = 1f,
         var rotation: Float = 0f
@@ -309,6 +310,19 @@ class MainActivity : ComponentActivity() {
             })
         }
         root.addView(saturationBar, LinearLayout.LayoutParams(-1, 30))
+        root.addView(TextView(this).apply { text = "HUE"; textSize = 9f; setTextColor(Color.rgb(145, 160, 185)) })
+        val hueBar = SeekBar(this).apply {
+            max = 360
+            progress = 180
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) { effectSettings.hue = (progress - 180).toFloat(); effectSettings.preset = "Custom"; applyPreviewEffects(); updateEffectInfo() }
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            })
+        }
+        root.addView(hueBar, LinearLayout.LayoutParams(-1, 30))
         val transformRow = row(root)
         button("ZOOM −") { effectSettings.zoom = (effectSettings.zoom - .1f).coerceAtLeast(.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
         button("ZOOM +") { effectSettings.zoom = (effectSettings.zoom + .1f).coerceAtMost(2.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
@@ -533,7 +547,7 @@ class MainActivity : ComponentActivity() {
                 keyJson.put(JSONObject().put("clipId", clipId).put("time", key.timeMs).put("scale", key.scale).put("rotation", key.rotationDegrees))
             } }
             val fx = JSONObject().put("preset", effectSettings.preset).put("brightness", effectSettings.brightness)
-                .put("contrast", effectSettings.contrast).put("saturation", effectSettings.saturation).put("blur", effectSettings.blur).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation)
+                .put("contrast", effectSettings.contrast).put("saturation", effectSettings.saturation).put("hue", effectSettings.hue).put("blur", effectSettings.blur).put("zoom", effectSettings.zoom).put("rotation", effectSettings.rotation)
             root.put("videos", videos).put("audio", audios).put("texts", texts).put("selectedVideo", selectedClip)
                 .put("keyframes", keyJson).put("effects", fx)
             getSharedPreferences("editor_project", Context.MODE_PRIVATE).edit().putString("project_json", root.toString()).apply()
@@ -565,6 +579,7 @@ class MainActivity : ComponentActivity() {
                 effectSettings.brightness = fx.optDouble("brightness", 0.0).toFloat()
                 effectSettings.contrast = fx.optDouble("contrast", 0.0).toFloat()
                 effectSettings.saturation = fx.optDouble("saturation", 0.0).toFloat()
+                effectSettings.hue = fx.optDouble("hue", 0.0).toFloat()
                 effectSettings.blur = fx.optDouble("blur", 0.0).toFloat()
                 effectSettings.zoom = fx.optDouble("zoom", 1.0).toFloat()
                 effectSettings.rotation = fx.optDouble("rotation", 0.0).toFloat()
@@ -624,7 +639,7 @@ class MainActivity : ComponentActivity() {
         }
         if (effectSettings.brightness != 0f) effects.add(Brightness(effectSettings.brightness.coerceIn(-1f, 1f)))
         if (effectSettings.contrast != 0f) effects.add(Contrast(effectSettings.contrast.coerceIn(-1f, 1f)))
-        if (effectSettings.saturation != 0f) effects.add(HslAdjustment.Builder().adjustSaturation(effectSettings.saturation.coerceIn(-100f, 100f)).build())
+        if (effectSettings.saturation != 0f || effectSettings.hue != 0f) effects.add(HslAdjustment.Builder().adjustSaturation(effectSettings.saturation.coerceIn(-100f, 100f)).adjustHue(effectSettings.hue.coerceIn(-180f, 180f)).build())
         if (effectSettings.blur > 0f) effects.add(GaussianBlur(effectSettings.blur.coerceIn(0.5f, 12f)))
         if (titleLayers.isNotEmpty()) {
             val textOverlays = titleLayers.map { layer ->
@@ -653,7 +668,7 @@ class MainActivity : ComponentActivity() {
 
     private fun updateEffectInfo() {
         if (!::effectInfo.isInitialized) return
-        effectInfo.text = "Preset: ${effectSettings.preset} • Bright ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Sat ${effectSettings.saturation.toInt()} • Blur ${effectSettings.blur.toInt()} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}°"
+        effectInfo.text = "Preset: ${effectSettings.preset} • Bright ${"%.2f".format(effectSettings.brightness)} • Contrast ${"%.2f".format(effectSettings.contrast)} • Sat ${effectSettings.saturation.toInt()} • Hue ${effectSettings.hue.toInt()}° • Blur ${effectSettings.blur.toInt()} • Zoom ${"%.2f".format(effectSettings.zoom)}× • Rotation ${effectSettings.rotation.toInt()}°"
     }
 
 
@@ -728,10 +743,13 @@ class MainActivity : ComponentActivity() {
                         .build()
                 ).build()
         }
+        if (items.isNotEmpty()) {
+            val selectedId = clips.getOrNull(selectedClip.coerceIn(0, clips.lastIndex))?.id
+            if (selectedId != null) p.setVideoEffects(buildVideoEffects(selectedId))
+        }
         p.setMediaItems(items, selectedClip.coerceIn(0, (items.size - 1).coerceAtLeast(0)), 0)
         p.prepare()
         p.pause()
-        applyPreviewEffects()
     }
 
     private fun splitAtPlayhead() {
