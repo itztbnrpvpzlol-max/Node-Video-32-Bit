@@ -833,11 +833,10 @@ class MainActivity : ComponentActivity() {
     private fun applyTextPreviewAnimation() {
         if (textOverlays.isEmpty() || selectedClip !in clips.indices) return
         val keys = transformKeyframes[clips[selectedClip].id].orEmpty().sortedBy { it.timeMs }
-        if (keys.isEmpty()) return
         val time = (player?.currentPosition ?: 0L).coerceAtLeast(0L)
-        val first = keys.first()
-        val last = keys.last()
-        val values = if (time <= first.timeMs) first else if (time >= last.timeMs) last else {
+        val values = if (keys.isEmpty()) {
+            TransformKeyframe(time, effectSettings.zoom, effectSettings.rotation, effectSettings.opacity, effectSettings.posX, effectSettings.posY)
+        } else if (time <= keys.first().timeMs) keys.first() else if (time >= keys.last().timeMs) keys.last() else {
             val rightIndex = keys.indexOfFirst { it.timeMs >= time }.coerceAtLeast(1)
             val left = keys[rightIndex - 1]
             val right = keys[rightIndex]
