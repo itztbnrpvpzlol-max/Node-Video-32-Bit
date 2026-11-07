@@ -9,7 +9,9 @@ data class TransformKeyframe(
     val timeMs: Long,
     val scale: Float,
     val rotationDegrees: Float,
-    val alpha: Float = 1f
+    val alpha: Float = 1f,
+    val x: Float = 0f,
+    val y: Float = 0f
 )
 
 /**
