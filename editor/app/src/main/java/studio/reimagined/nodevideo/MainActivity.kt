@@ -270,7 +270,10 @@ class MainActivity : ComponentActivity() {
             setPadding(4, 8, 4, 4)
         }
         root.addView(effectsTitle)
-        val presets = row(root)
+        val presetScroll = HorizontalScrollView(this).apply { isHorizontalScrollBarEnabled = false }
+        val presets = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        presetScroll.addView(presets)
+        root.addView(presetScroll, LinearLayout.LayoutParams(-1, 48))
         listOf("Original", "B&W", "Negative", "Cinematic", "Vintage", "Warm", "Cool", "Soft").forEach { preset ->
             button(preset) {
                 effectSettings.preset = preset
@@ -289,7 +292,7 @@ class MainActivity : ComponentActivity() {
                 applyPreviewEffects()
                 updateEffectInfo()
                 saveProject()
-            }.also { presets.addView(it, weighted()) }
+            }.also { presets.addView(it, LinearLayout.LayoutParams(94, 42).apply { setMargins(3, 1, 3, 1) }) }
         }
         effectInfo = TextView(this).apply {
             text = "Preset: Original • Brightness 0 • Contrast 0 • Zoom 1.00× • Rotation 0°"
@@ -363,11 +366,11 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(hueBar, LinearLayout.LayoutParams(-1, 30))
         val transformRow = row(root)
-        button("ZOOM −") { effectSettings.zoom = (effectSettings.zoom - .1f).coerceAtLeast(.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
-        button("ZOOM +") { effectSettings.zoom = (effectSettings.zoom + .1f).coerceAtMost(2.5f); applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
-        button("ROTATE 90°") { effectSettings.rotation = (effectSettings.rotation + 90f) % 360f; applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
-        button("BLUR") { effectSettings.blur = when (effectSettings.blur) { 0f -> 4f; 4f -> 9f; else -> 0f }; applyPreviewEffects(); updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
-        button("FADE TEXT") { effectSettings.opacity = when (effectSettings.opacity) { 1f -> 0.5f; 0.5f -> 0.2f; else -> 1f }; updateEffectInfo() }.also { transformRow.addView(it, weighted()) }
+        button("ZOOM −") { effectSettings.zoom = (effectSettings.zoom - .1f).coerceAtLeast(.5f); applyPreviewEffects(); updateEffectInfo(); saveProject() }.also { transformRow.addView(it, weighted()) }
+        button("ZOOM +") { effectSettings.zoom = (effectSettings.zoom + .1f).coerceAtMost(2.5f); applyPreviewEffects(); updateEffectInfo(); saveProject() }.also { transformRow.addView(it, weighted()) }
+        button("ROTATE 90°") { effectSettings.rotation = (effectSettings.rotation + 90f) % 360f; applyPreviewEffects(); updateEffectInfo(); saveProject() }.also { transformRow.addView(it, weighted()) }
+        button("BLUR") { effectSettings.blur = when (effectSettings.blur) { 0f -> 4f; 4f -> 9f; else -> 0f }; applyPreviewEffects(); updateEffectInfo(); saveProject() }.also { transformRow.addView(it, weighted()) }
+        button("FADE TEXT") { effectSettings.opacity = when (effectSettings.opacity) { 1f -> 0.5f; 0.5f -> 0.2f; else -> 1f }; updateEffectInfo(); saveProject() }.also { transformRow.addView(it, weighted()) }
         val keyframeRow = row(root)
         button("◆ ADD KEYFRAME") { addTransformKeyframe() }.also { keyframeRow.addView(it, weighted(1.4f)) }
         button("UNDO KEY") { removeLatestKeyframe() }.also { keyframeRow.addView(it, weighted()) }
