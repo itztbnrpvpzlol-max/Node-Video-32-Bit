@@ -28,22 +28,26 @@ class AnimatedCaptionOverlay(
         val ordered = keyframes.sortedBy { it.timeMs }
         if (ordered.isEmpty()) return OverlaySettings.Builder().setScale(0.65f, 0.65f).build()
         val timeMs = presentationTimeUs / 1000L
-        val pair = when {
-            timeMs <= ordered.first().timeMs -> ordered.first().scale to ordered.first().rotationDegrees
-            timeMs >= ordered.last().timeMs -> ordered.last().scale to ordered.last().rotationDegrees
+        val values = when {
+            timeMs <= ordered.first().timeMs -> Triple(ordered.first().scale, ordered.first().rotationDegrees, ordered.first().alpha)
+            timeMs >= ordered.last().timeMs -> Triple(ordered.last().scale, ordered.last().rotationDegrees, ordered.last().alpha)
             else -> {
                 val rightIndex = ordered.indexOfFirst { it.timeMs >= timeMs }.coerceAtLeast(1)
                 val left = ordered[rightIndex - 1]
                 val right = ordered[rightIndex]
                 val amount = (timeMs - left.timeMs).toFloat() / (right.timeMs - left.timeMs).coerceAtLeast(1L)
-                (left.scale + (right.scale - left.scale) * amount) to
-                    (left.rotationDegrees + (right.rotationDegrees - left.rotationDegrees) * amount)
+                Triple(
+                    left.scale + (right.scale - left.scale) * amount,
+                    left.rotationDegrees + (right.rotationDegrees - left.rotationDegrees) * amount,
+                    left.alpha + (right.alpha - left.alpha) * amount
+                )
             }
         }
-        val overlayScale = (pair.first * 0.65f).coerceIn(0.1f, 1.5f)
+        val overlayScale = (values.first * 0.65f).coerceIn(0.1f, 1.5f)
         return OverlaySettings.Builder()
             .setScale(overlayScale, overlayScale)
-            .setRotationDegrees(pair.second)
+            .setRotationDegrees(values.second)
+            .setAlphaScale(values.third.coerceIn(0f, 1f))
             .build()
     }
 }
