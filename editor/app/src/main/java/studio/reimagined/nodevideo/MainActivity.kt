@@ -134,6 +134,7 @@ class MainActivity : ComponentActivity() {
                 rebuildPlaylist()
                 renderTimeline()
                 status.text = "${clips.size} clip(s) in project"
+                saveProject()
             } else toast("Couldn't read the selected video files")
         }
     }
@@ -148,6 +149,7 @@ class MainActivity : ComponentActivity() {
             }
             renderAudioTimeline(); rebuildAudioPlaylist()
             status.text = audioClips.size.toString() + " audio clip(s) in project"
+            saveProject()
         }
     }
 
@@ -729,6 +731,10 @@ class MainActivity : ComponentActivity() {
             }
             val texts = root.optJSONArray("texts") ?: JSONArray()
             for (i in 0 until texts.length()) { val t = texts.getJSONObject(i); titleLayers.add(TextLayer(t.optLong("id", nextTextId++), t.getString("value"))) }
+            nextId = (clips.maxOfOrNull { it.id } ?: 0L) + 1L
+            nextAudioId = (audioClips.maxOfOrNull { it.id } ?: 0L) + 1L
+            nextTextId = (titleLayers.maxOfOrNull { it.id } ?: 0L) + 1L
+            nextImageId = (imageLayers.maxOfOrNull { it.id } ?: 0L) + 1L
             selectedClip = root.optInt("selectedVideo", 0).coerceIn(0, (clips.size - 1).coerceAtLeast(0))
             rebuildPlaylist(); rebuildAudioPlaylist(); renderTimeline(); renderAudioTimeline(); renderImageLayerTimeline(); renderKeyframeTimeline(); applyPreviewEffects()
             titleLayers.forEach { layer -> val overlay = TextView(this).apply { text = layer.value; textSize = 26f; typeface = Typeface.create("sans-serif", Typeface.BOLD); setTextColor(Color.WHITE); gravity = Gravity.CENTER }; previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER)); textOverlays[layer.id] = overlay }
@@ -957,6 +963,7 @@ class MainActivity : ComponentActivity() {
         rebuildPlaylist()
         renderTimeline()
         status.text = "Clip split into two segments"
+        saveProject()
     }
 
     private fun trimAtPlayhead(trimStart: Boolean) {
@@ -975,6 +982,7 @@ class MainActivity : ComponentActivity() {
             else "Trimmed the end of clip " + (index + 1)
         rebuildPlaylist()
         renderTimeline()
+        saveProject()
     }
 
     private fun removeSelected() {
@@ -984,6 +992,7 @@ class MainActivity : ComponentActivity() {
         rebuildPlaylist()
         renderTimeline()
         status.text = if (clips.isEmpty()) "Timeline empty" else "${clips.size} clip(s) in project"
+        saveProject()
     }
 
     private fun renderTimeline() {
