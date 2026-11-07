@@ -1,0 +1,140 @@
+name: Node Video 32-bit compatibility analysis
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "Node_Video_Pro.apk"
+      - ".gitattributes"
+      - ".github/workflows/nodevideo-32bit.yml"
+      - "armv7-libs/**"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository and fetch Git LFS APK
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install Android APK tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apktool apksigner aapt unzip file binutils
+
+      - name: Verify original APK and inspect native ABIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="Node_Video_Pro.apk"
+          test -s "$APK"
+          mkdir -p reports
+          {
+            echo "# Node Video APK inspection"
+            echo
+            echo "APK size: $(stat -c%s "$APK") bytes"
+            echo
+            echo "## APK metadata"
+            aapt dump badging "$APK" | head -n 25 || true
+            echo
+            echo "## Native library entries"
+            unzip -Z1 "$APK" | grep -E '^lib/[^/]+/[^/]+\\.so$' || true
+            echo
+            echo "## ABI directories"
+            unzip -Z1 "$APK" | awk -F/ '$1=="lib" && NF>=3 {print $2}' | sort -u || true
+          } > reports/inspection.md
+          mkdir -p original-libs
+          unzip -oq "$APK" 'lib/*' -d original-libs || true
+          find original-libs -type f -name '*.so' -print0 | while IFS= read -r -d '' so; do
+            echo "### $so" >> reports/inspection.md
+            file "$so" >> reports/inspection.md
+            readelf -h "$so" 2>/dev/null | grep -E 'Class:|Machine:' >> reports/inspection.md || true
+          done
+          cat reports/inspection.md
+
+      - name: Decompile APK
+        run: |
+          set -euo pipefail
+          apktool d -f Node_Video_Pro.apk -o nodevideo-decoded
+
+      - name: Check for real ARMv7 native libraries
+        id: abi
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports
+          if [ -d nodevideo-decoded/lib/armeabi-v7a ] && find nodevideo-decoded/lib/armeabi-v7a -type f -name '*.so' | grep -q .; then
+            echo "armv7_present=true" >> "$GITHUB_OUTPUT"
+            echo "Original APK already contains armeabi-v7a native libraries." >> reports/inspection.md
+          elif [ -d armv7-libs ] && find armv7-libs -type f -name '*.so' | grep -q .; then
+            echo "armv7_present=true" >> "$GITHUB_OUTPUT"
+            echo "External ARMv7 libraries supplied in armv7-libs/." >> reports/inspection.md
+          else
+            echo "armv7_present=false" >> "$GITHUB_OUTPUT"
+            {
+              echo
+              echo "## Build status"
+              echo "No armeabi-v7a native libraries were found."
+              echo "A 32-bit APK cannot be created reliably by changing manifest ABI labels."
+              echo "Supply genuine 32-bit builds of every required native library in armv7-libs/."
+            } >> reports/inspection.md
+          fi
+
+      - name: Overlay supplied ARMv7 libraries
+        if: steps.abi.outputs.armv7_present == 'true' && hashFiles('armv7-libs/**/*.so') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p nodevideo-decoded/lib/armeabi-v7a
+          find armv7-libs -type f -name '*.so' -print0 | while IFS= read -r -d '' so; do
+            file "$so" | grep -q 'ELF 32-bit' || {
+              echo "Not a 32-bit ELF library: $so"
+              exit 1
+            }
+            cp "$so" nodevideo-decoded/lib/armeabi-v7a/
+          done
+
+      - name: Build and sign ARMv7 APK
+        if: steps.abi.outputs.armv7_present == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          apktool b nodevideo-decoded -o nodevideo-unsigned.apk
+          keytool -genkeypair -v -keystore build-test.keystore \
+            -alias nodevideo-test -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass android -keypass android \
+            -dname "CN=NodeVideo Compatibility Test,O=Local Build,C=US"
+          apksigner sign --ks build-test.keystore --ks-key-alias nodevideo-test \
+            --ks-pass pass:android --key-pass pass:android \
+            --out NodeVideo-armv7-test.apk nodevideo-unsigned.apk
+          apksigner verify --verbose --print-certs NodeVideo-armv7-test.apk
+          unzip -Z1 NodeVideo-armv7-test.apk | grep -E '^lib/armeabi-v7a/.*\\.so$'
+
+      - name: Upload inspection and decoded project
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodevideo-apk-analysis
+          path: |
+            reports/inspection.md
+            nodevideo-decoded/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload rebuilt APK when available
+        if: steps.abi.outputs.armv7_present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: NodeVideo-armv7-test-apk
+          path: NodeVideo-armv7-test.apk
+          if-no-files-found: error
+          retention-days: 7
