@@ -8,7 +8,8 @@ import androidx.media3.effect.MatrixTransformation
 data class TransformKeyframe(
     val timeMs: Long,
     val scale: Float,
-    val rotationDegrees: Float
+    val rotationDegrees: Float,
+    val alpha: Float = 1f
 )
 
 /**
