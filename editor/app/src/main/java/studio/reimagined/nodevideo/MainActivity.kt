@@ -142,6 +142,7 @@ class MainActivity : ComponentActivity() {
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     selectedClip = exo.currentMediaItemIndex
                     renderTimeline()
+                    applyPreviewEffects()
                 }
             })
         }
@@ -153,7 +154,7 @@ class MainActivity : ComponentActivity() {
     private fun buildEditor() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(12)
+            setPadding(14)
             setBackgroundColor(Color.rgb(12, 14, 20))
         }
         val header = TextView(this).apply {
@@ -176,7 +177,13 @@ class MainActivity : ComponentActivity() {
             setBackgroundColor(Color.BLACK)
         }
         previewContainer.addView(playerView, FrameLayout.LayoutParams(-1, -1))
-        root.addView(previewContainer, LinearLayout.LayoutParams(-1, 0, 1f))
+        val previewFrame = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(2)
+            setBackgroundColor(Color.rgb(44, 115, 224))
+            addView(previewContainer, LinearLayout.LayoutParams(-1, -1))
+        }
+        root.addView(previewFrame, LinearLayout.LayoutParams(-1, 220))
 
         status = TextView(this).apply {
             text = "Import media to start editing"
@@ -342,7 +349,12 @@ class MainActivity : ComponentActivity() {
             setTextColor(Color.rgb(110, 125, 150))
             setPadding(4, 8, 4, 0)
         })
-        setContentView(root)
+        val pageScroll = android.widget.ScrollView(this).apply {
+            isFillViewport = true
+            addView(root, android.widget.ScrollView.LayoutParams(-1, -2))
+            setBackgroundColor(Color.rgb(12, 14, 20))
+        }
+        setContentView(pageScroll)
     }
 
     private fun row(parent: LinearLayout): LinearLayout {
@@ -360,6 +372,14 @@ class MainActivity : ComponentActivity() {
         textSize = 10f
         isAllCaps = false
         setOnClickListener { action() }
+        setTextColor(Color.WHITE)
+        setPadding(4, 2, 4, 2)
+        background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = 12f
+            setColor(Color.rgb(31, 40, 56))
+            setStroke(1, Color.rgb(54, 69, 91))
+        }
+        minHeight = 40
     }
 
     private fun showTextLayerDialog() {
@@ -685,6 +705,7 @@ class MainActivity : ComponentActivity() {
                 setOnClickListener {
                     selectedClip = index
                     player?.seekTo(index, 0)
+                    applyPreviewEffects()
                     renderTimeline()
                 }
             }
