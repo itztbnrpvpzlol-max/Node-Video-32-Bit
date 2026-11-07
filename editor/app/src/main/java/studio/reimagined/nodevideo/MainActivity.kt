@@ -167,7 +167,7 @@ class MainActivity : ComponentActivity() {
                 if (bitmap != null) {
                     val imageView = ImageView(this).apply { setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; alpha = 0.95f }
                     val lp = FrameLayout.LayoutParams(220, 220, Gravity.CENTER)
-                    (playerView.overlayFrameLayoutLayout ?: previewContainer).addView(imageView, lp)
+                    (playerView.overlayFrameLayout ?: previewContainer).addView(imageView, lp)
                     imageOverlays[imageLayers.last().id] = imageView
                 }
             }
@@ -544,7 +544,7 @@ class MainActivity : ComponentActivity() {
                         gravity = Gravity.CENTER
                         setPadding(16)
                     }
-                    (playerView.overlayFrameLayoutLayout ?: previewContainer).addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+                    (playerView.overlayFrameLayout ?: previewContainer).addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
                     textOverlays[layer.id] = overlay
                     renderTextTimeline()
                     saveProject()
