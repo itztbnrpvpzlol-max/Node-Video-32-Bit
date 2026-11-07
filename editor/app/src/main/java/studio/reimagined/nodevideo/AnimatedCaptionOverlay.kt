@@ -56,7 +56,7 @@ class AnimatedCaptionOverlay(
             }
         }
         val overlayScale = (values[0] * 0.65f).coerceIn(0.1f, 1.5f)
-        return StaticOverlaySettings.Builder()
+        return OverlaySettings.Builder()
             .setScale(overlayScale, overlayScale)
             .setRotationDegrees(values[1])
             .setAlphaScale(values[2].coerceIn(0f, 1f))
