@@ -271,13 +271,24 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(effectsTitle)
         val presets = row(root)
-        listOf("Original", "B&W", "Negative", "Cinematic").forEach { preset ->
+        listOf("Original", "B&W", "Negative", "Cinematic", "Vintage", "Warm", "Cool", "Soft").forEach { preset ->
             button(preset) {
                 effectSettings.preset = preset
-                if (preset == "Cinematic") { effectSettings.brightness = -0.04f; effectSettings.contrast = 0.18f }
-                if (preset == "Original") { effectSettings.brightness = 0f; effectSettings.contrast = 0f; effectSettings.zoom = 1f; effectSettings.rotation = 0f }
+                when (preset) {
+                    "Original" -> {
+                        effectSettings.brightness = 0f; effectSettings.contrast = 0f
+                        effectSettings.saturation = 0f; effectSettings.hue = 0f; effectSettings.blur = 0f
+                        effectSettings.zoom = 1f; effectSettings.rotation = 0f; effectSettings.opacity = 1f
+                    }
+                    "Cinematic" -> { effectSettings.brightness = -0.04f; effectSettings.contrast = 0.18f; effectSettings.saturation = -8f; effectSettings.hue = 0f; effectSettings.blur = 0f }
+                    "Vintage" -> { effectSettings.brightness = 0.04f; effectSettings.contrast = -0.15f; effectSettings.saturation = -30f; effectSettings.hue = -12f; effectSettings.blur = 0f }
+                    "Warm" -> { effectSettings.brightness = 0.03f; effectSettings.contrast = 0.04f; effectSettings.saturation = 12f; effectSettings.hue = -12f; effectSettings.blur = 0f }
+                    "Cool" -> { effectSettings.brightness = -0.02f; effectSettings.contrast = 0.04f; effectSettings.saturation = -8f; effectSettings.hue = 18f; effectSettings.blur = 0f }
+                    "Soft" -> { effectSettings.brightness = 0.03f; effectSettings.contrast = -0.08f; effectSettings.saturation = 0f; effectSettings.hue = 0f; effectSettings.blur = 3f }
+                }
                 applyPreviewEffects()
-                effectInfo.text = "Preset: $preset"
+                updateEffectInfo()
+                saveProject()
             }.also { presets.addView(it, weighted()) }
         }
         effectInfo = TextView(this).apply {
@@ -815,12 +826,13 @@ class MainActivity : ComponentActivity() {
         }
         keys.forEach { key ->
             val chip = TextView(this).apply {
-                text = "◆ " + (key.timeMs / 1000.0) + "s • " + key.scale + "× • " + key.rotationDegrees.toInt() + "°"
+                text = "◆ " + (key.timeMs / 1000.0) + "s • " + key.scale + "× • " + key.rotationDegrees.toInt() + "° • " + (key.alpha * 100).toInt() + "%"
                 textSize = 9f
                 gravity = Gravity.CENTER
                 setTextColor(Color.WHITE)
                 setPadding(10)
                 setBackgroundColor(Color.rgb(105, 75, 165))
+                setOnClickListener { player?.seekTo(key.timeMs); status.text = "Playhead moved to keyframe at " + (key.timeMs / 1000.0) + "s" }
             }
             val lp = LinearLayout.LayoutParams(-2, 30)
             lp.setMargins(3, 2, 3, 2)
