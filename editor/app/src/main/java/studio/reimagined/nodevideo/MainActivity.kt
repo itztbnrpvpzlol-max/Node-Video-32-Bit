@@ -120,7 +120,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private val pickVideos = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+    private val pickVideos = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (!uris.isNullOrEmpty()) {
             uris.forEach { uri ->
                 try { contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
@@ -423,9 +423,9 @@ class MainActivity : ComponentActivity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 76))
 
         val actions = row(root)
-        button("＋ MEDIA") { pickVideos.launch("video/*") }.also { actions.addView(it, weighted(1.4f)) }
+        button("＋ MEDIA") { pickVideos.launch(arrayOf("video/*")) }.also { actions.addView(it, weighted(1.4f)) }
         button("＋ TEXT") { showTextLayerDialog() }.also { actions.addView(it, weighted()) }
-        button("＋ IMAGE") { pickImages.launch("image/*") }.also { actions.addView(it, weighted()) }
+        button("＋ IMAGE") { pickImages.launch(arrayOf("image/*")) }.also { actions.addView(it, weighted()) }
         button("TEXT −") { removeLatestTextLayer() }.also { actions.addView(it, weighted()) }
         button("＋ AUDIO") { pickAudio.launch(arrayOf("audio/*")) }.also { actions.addView(it, weighted()) }
         button("SAVE") { saveProject() }.also { actions.addView(it, weighted()) }
