@@ -29,25 +29,28 @@ class AnimatedCaptionOverlay(
         if (ordered.isEmpty()) return OverlaySettings.Builder().setScale(0.65f, 0.65f).build()
         val timeMs = presentationTimeUs / 1000L
         val values = when {
-            timeMs <= ordered.first().timeMs -> Triple(ordered.first().scale, ordered.first().rotationDegrees, ordered.first().alpha)
-            timeMs >= ordered.last().timeMs -> Triple(ordered.last().scale, ordered.last().rotationDegrees, ordered.last().alpha)
+            timeMs <= ordered.first().timeMs -> listOf(ordered.first().scale, ordered.first().rotationDegrees, ordered.first().alpha, ordered.first().x, ordered.first().y)
+            timeMs >= ordered.last().timeMs -> listOf(ordered.last().scale, ordered.last().rotationDegrees, ordered.last().alpha, ordered.last().x, ordered.last().y)
             else -> {
                 val rightIndex = ordered.indexOfFirst { it.timeMs >= timeMs }.coerceAtLeast(1)
                 val left = ordered[rightIndex - 1]
                 val right = ordered[rightIndex]
                 val amount = (timeMs - left.timeMs).toFloat() / (right.timeMs - left.timeMs).coerceAtLeast(1L)
-                Triple(
+                listOf(
                     left.scale + (right.scale - left.scale) * amount,
                     left.rotationDegrees + (right.rotationDegrees - left.rotationDegrees) * amount,
-                    left.alpha + (right.alpha - left.alpha) * amount
+                    left.alpha + (right.alpha - left.alpha) * amount,
+                    left.x + (right.x - left.x) * amount,
+                    left.y + (right.y - left.y) * amount
                 )
             }
         }
-        val overlayScale = (values.first * 0.65f).coerceIn(0.1f, 1.5f)
+        val overlayScale = (values[0] * 0.65f).coerceIn(0.1f, 1.5f)
         return OverlaySettings.Builder()
             .setScale(overlayScale, overlayScale)
-            .setRotationDegrees(values.second)
-            .setAlphaScale(values.third.coerceIn(0f, 1f))
+            .setRotationDegrees(values[1])
+            .setAlphaScale(values[2].coerceIn(0f, 1f))
+            .setBackgroundFrameAnchor(values[3].coerceIn(-1f, 1f), values[4].coerceIn(-1f, 1f))
             .build()
     }
 }
