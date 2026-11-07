@@ -72,7 +72,10 @@ jobs:
         run: |
           set -euo pipefail
           original_native_count=$(find original-libs -type f -name '*.so' | wc -l)
-          original_armv7_count=$(find nodevideo-decoded/lib/armeabi-v7a -type f -name '*.so' 2>/dev/null | wc -l)
+          original_armv7_count=0
+          if [ -d nodevideo-decoded/lib/armeabi-v7a ]; then
+            original_armv7_count=$(find nodevideo-decoded/lib/armeabi-v7a -type f -name '*.so' | wc -l)
+          fi
           supplied_armv7_count=0
           if [ -d armv7-libs ]; then
             supplied_armv7_count=$(find armv7-libs -type f -name '*.so' | wc -l)
@@ -126,13 +129,14 @@ jobs:
           unzip -Z1 NodeVideo-armv7-test.apk | grep -E '^lib/armeabi-v7a/.*\.so$' || true
 
       - name: Upload inspection and decoded project
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: nodevideo-apk-analysis
           path: |
             reports/inspection.md
             nodevideo-decoded/
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
 
       - name: Upload rebuilt APK when available
