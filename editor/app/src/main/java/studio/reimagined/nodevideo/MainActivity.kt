@@ -3,6 +3,8 @@ package studio.reimagined.nodevideo
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -36,6 +38,19 @@ class MainActivity : ComponentActivity() {
     private lateinit var playButton: Button
     private lateinit var position: SeekBar
     private var updatingPosition = false
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val progressUpdater = object : Runnable {
+        override fun run() {
+            val p = player
+            if (p != null && ::position.isInitialized && p.duration > 0) {
+                updatingPosition = true
+                position.progress = ((p.currentPosition * 1000L) / p.duration)
+                    .toInt().coerceIn(0, 1000)
+                updatingPosition = false
+            }
+            uiHandler.postDelayed(this, 250)
+        }
+    }
 
     private val pickVideos = registerForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         if (!uris.isNullOrEmpty()) {
@@ -75,6 +90,7 @@ class MainActivity : ComponentActivity() {
                 }
             })
         }
+        uiHandler.post(progressUpdater)
     }
 
     private fun buildEditor() {
@@ -257,6 +273,7 @@ class MainActivity : ComponentActivity() {
     private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
     override fun onDestroy() {
+        uiHandler.removeCallbacks(progressUpdater)
         playerView.player = null
         player?.release()
         player = null
