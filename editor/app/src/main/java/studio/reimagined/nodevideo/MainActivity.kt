@@ -165,7 +165,7 @@ class MainActivity : ComponentActivity() {
                 if (bitmap != null) {
                     val imageView = ImageView(this).apply { setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; alpha = 0.95f }
                     val lp = FrameLayout.LayoutParams(220, 220, Gravity.CENTER)
-                    previewContainer.addView(imageView, lp)
+                    (playerView.overlayFrame ?: previewContainer).addView(imageView, lp)
                     imageOverlays[imageLayers.last().id] = imageView
                 }
             }
@@ -534,7 +534,7 @@ class MainActivity : ComponentActivity() {
                         gravity = Gravity.CENTER
                         setPadding(16)
                     }
-                    previewContainer.addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+                    (playerView.overlayFrame ?: previewContainer).addView(overlay, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
                     textOverlays[layer.id] = overlay
                     renderTextTimeline()
                     saveProject()
@@ -556,7 +556,7 @@ class MainActivity : ComponentActivity() {
             .setView(input)
             .setNeutralButton("DELETE") { _, _ ->
                 titleLayers.removeAll { it.id == layer.id }
-                textOverlays.remove(layer.id)?.let { previewContainer.removeView(it) }
+                textOverlays.remove(layer.id)?.let { playerView.overlayFrame?.removeView(it); previewContainer.removeView(it) }
                 renderTextTimeline()
                 saveProject()
             }
@@ -635,7 +635,7 @@ class MainActivity : ComponentActivity() {
                         .setNegativeButton("CANCEL", null)
                         .setPositiveButton("REMOVE") { _, _ ->
                             imageLayers.remove(layer)
-                            imageOverlays.remove(layer.id)?.let { previewContainer.removeView(it) }
+                            imageOverlays.remove(layer.id)?.let { playerView.overlayFrame?.removeView(it); previewContainer.removeView(it) }
                             renderImageLayerTimeline()
                             saveProject()
                         }.show()
@@ -690,10 +690,10 @@ class MainActivity : ComponentActivity() {
         val raw = getSharedPreferences("editor_project", Context.MODE_PRIVATE).getString("project_json", null) ?: return
         try {
             val root = JSONObject(raw); clips.clear(); audioClips.clear(); titleLayers.clear(); imageLayers.clear()
-            textOverlays.values.forEach { previewContainer.removeView(it) }; textOverlays.clear()
+            textOverlays.values.forEach { playerView.overlayFrame?.removeView(it); previewContainer.removeView(it) }; textOverlays.clear()
             val videos = root.optJSONArray("videos") ?: JSONArray()
             for (i in 0 until videos.length()) { val v = videos.getJSONObject(i); val start = v.optLong("start", 0); val end = v.optLong("end", 0); if (end > start) clips.add(Clip(v.optLong("id", nextId++), Uri.parse(v.getString("uri")), start, end)) }
-            imageOverlays.values.forEach { previewContainer.removeView(it) }; imageOverlays.clear()
+            imageOverlays.values.forEach { playerView.overlayFrame?.removeView(it); previewContainer.removeView(it) }; imageOverlays.clear()
             val images = root.optJSONArray("images") ?: JSONArray()
             for (i in 0 until images.length()) {
                 val image = images.getJSONObject(i)
@@ -702,7 +702,7 @@ class MainActivity : ComponentActivity() {
                 val bitmap = try { contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) } } catch (_: Exception) { null }
                 if (bitmap != null) {
                     val view = ImageView(this).apply { setImageBitmap(bitmap); scaleType = ImageView.ScaleType.FIT_CENTER; alpha = 0.95f }
-                    previewContainer.addView(view, FrameLayout.LayoutParams(220, 220, Gravity.CENTER))
+                    (playerView.overlayFrame ?: previewContainer).addView(view, FrameLayout.LayoutParams(220, 220, Gravity.CENTER))
                     imageOverlays[layer.id] = view
                 }
             }
@@ -819,7 +819,6 @@ class MainActivity : ComponentActivity() {
                 .setScale(effectSettings.zoom, effectSettings.zoom)
                 .setRotationDegrees(effectSettings.rotation).build())
         }
-        val imageOverlayEffects = mutableListOf<androidx.media3.effect.TextureOverlay>()
         val bitmapOverlays = imageLayers.mapNotNull { layer ->
             try {
                 val bitmap = contentResolver.openInputStream(layer.uri)?.use { BitmapFactory.decodeStream(it) }
