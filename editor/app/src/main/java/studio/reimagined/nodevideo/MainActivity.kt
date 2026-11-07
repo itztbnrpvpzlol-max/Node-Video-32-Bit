@@ -150,6 +150,12 @@ class MainActivity : ComponentActivity() {
         button("SPLIT") { splitAtPlayhead() }.also { transport.addView(it, weighted()) }
         button("DELETE") { removeSelected() }.also { transport.addView(it, weighted()) }
 
+        val trimActions = row(root)
+        button("TRIM IN") { trimAtPlayhead(trimStart = true) }
+            .also { trimActions.addView(it, weighted()) }
+        button("TRIM OUT") { trimAtPlayhead(trimStart = false) }
+            .also { trimActions.addView(it, weighted()) }
+
         root.addView(TextView(this).apply {
             text = "TIMELINE  /  VIDEO 1"
             textSize = 10f
@@ -237,6 +243,24 @@ class MainActivity : ComponentActivity() {
         rebuildPlaylist()
         renderTimeline()
         status.text = "Clip split into two segments"
+    }
+
+    private fun trimAtPlayhead(trimStart: Boolean) {
+        val p = player ?: return
+        val index = p.currentMediaItemIndex
+        if (index !in clips.indices) { toast("Select a clip first"); return }
+        val clip = clips[index]
+        val cut = clip.startMs + p.currentPosition
+        if (cut <= clip.startMs + 250 || cut >= clip.endMs - 250) {
+            toast("Move the playhead inside the clip before trimming")
+            return
+        }
+        clips[index] = if (trimStart) clip.copy(startMs = cut) else clip.copy(endMs = cut)
+        selectedClip = index
+        status.text = if (trimStart) "Trimmed the beginning of clip " + (index + 1)
+            else "Trimmed the end of clip " + (index + 1)
+        rebuildPlaylist()
+        renderTimeline()
     }
 
     private fun removeSelected() {
