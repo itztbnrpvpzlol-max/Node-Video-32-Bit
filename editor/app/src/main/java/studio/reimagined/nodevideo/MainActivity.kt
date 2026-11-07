@@ -254,7 +254,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) { saveProject() }
             })
         }
         root.addView(position, LinearLayout.LayoutParams(-1, 28))
