@@ -628,14 +628,7 @@ class MainActivity : ComponentActivity() {
         if (effectSettings.blur > 0f) effects.add(GaussianBlur(effectSettings.blur.coerceIn(0.5f, 12f)))
         if (titleLayers.isNotEmpty()) {
             val textOverlays = titleLayers.map { layer ->
-                val styled = SpannableString(layer.value).apply {
-                    setSpan(StyleSpan(Typeface.BOLD), 0, length, SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    setSpan(ForegroundColorSpan(Color.WHITE), 0, length, SpannableString.SPAN_EXCLUSIVE_EXCLUSIVE)
-                }
-                TextOverlay.createStaticTextOverlay(
-                    styled,
-                    OverlaySettings.Builder().setScale(0.65f, 0.65f).build()
-                )
+                AnimatedCaptionOverlay(layer.value, transformKeyframes[clipId].orEmpty())
             }
             effects.add(OverlayEffect(textOverlays))
         }
